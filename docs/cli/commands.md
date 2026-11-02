@@ -231,7 +231,13 @@ the one command that continues it, as if typed:
 | `step4-*final*.tex`, no PDF | `pdf compile --tex <it>` |
 
 The newest file of a stage wins, `-copy-N` re-runs included; the `-main.tex` copies a compile
-leaves behind are skipped. Folders without any `.tex` (not started) are left to `run`.
+leaves behind are skipped. So are a PDF repair's leftovers ([../latex-auto-fix.md](../latex-auto-fix.md)):
+the backup `-orig.tex` / `-origN.tex` with its `.pdf`, and the Antigravity candidates `-tryN.tex`,
+`-tryN-rejected.tex`, `-tryN.pdf`. The next command reads the step's own file (`pdf compile`
+starts again from `step4-*-final.tex`), and none of their PDFs counts as the lecture's PDF. Before
+2026-11-02 the backup, written seconds after the step's file with the same text, was the newest and
+was read instead (grundstrukturen 04-21-25, and 05-05-25 / 05-12-25 at step 3). Folders without any
+`.tex` (not started) are left to `run`.
 
 A `-truncated.tex` file is never a stage's output. A refinement step whose answer broke off (eight
 `503`s on a continue, say) saves the fragment as `<its output>-truncated.tex` and fails, so `finish`

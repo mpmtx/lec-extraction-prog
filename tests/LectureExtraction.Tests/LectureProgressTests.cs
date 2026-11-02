@@ -100,6 +100,27 @@ public class LectureProgressTests : IDisposable {
     }
 
     [Fact]
+    public void A_pdf_repairs_backups_and_candidates_are_neither_the_input_nor_the_pdf() {
+        // grundstrukturen 04-21-25: the backup a failed compile takes is written after the step's file.
+        Touch($"step4-{Lecture}-offset-final.tex");
+        Touch($"step4-{Lecture}-offset-final-orig.tex");
+        Touch($"step4-{Lecture}-offset-final-orig.pdf");
+        Touch($"step4-{Lecture}-offset-final-orig2.tex");
+        Touch($"step4-{Lecture}-offset-final-try1.tex");
+        Touch($"step4-{Lecture}-offset-final-try1.pdf");
+        Touch($"step4-{Lecture}-offset-final-try2-rejected.tex");
+
+        var p = LectureProgress.Scan(_folder);
+
+        Assert.Equal(LectureStage.Pdf, p.NextStage);
+        Assert.Equal($"step4-{Lecture}-offset-final.tex", Path.GetFileName(p.NextInput));
+
+        // The step's own PDF, as runs before 2026-10-15 wrote it beside the .tex, still counts.
+        Touch($"step4-{Lecture}-offset-final.pdf");
+        Assert.Equal(LectureStage.Done, LectureProgress.Scan(_folder).NextStage);
+    }
+
+    [Fact]
     public void The_lectures_pdf_means_done() {
         Touch($"step4-{Lecture}-all-offset-final.tex");
         Touch($"{Lecture}.pdf");

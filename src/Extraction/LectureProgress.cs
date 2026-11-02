@@ -25,11 +25,12 @@ public enum LectureStage {
 /// [AI Context] What one lecture output folder holds and which stage comes next, read from the file
 /// names the pipeline writes (see docs/cli/pipeline.md). Shared by `status` and `finish`, so the
 /// report and the action cannot disagree. Each refinement step's input is the newest file with that
-/// step's prefix, re-run copies (-copy-N) included: step N reads the stepN-* file. A failed step's
-/// "-truncated.tex" fragment never counts: the step is redone from its own input.
+/// step's prefix, re-run copies (-copy-N) included: step N reads the stepN-* file. Files written beside
+/// a step's output never count (<see cref="IsSideFile"/>): after a failed step's "-truncated.tex"
+/// fragment, the step is redone from its own input.
 /// [Human] Was ein Vorlesungsordner enthält und welcher Schritt als Nächstes fällig ist.
 /// </summary>
-public sealed record LectureProgress(
+public sealed partial record LectureProgress(
     string Folder,
     int PartsCount,
     string? CombinedTex,
@@ -94,8 +95,8 @@ public sealed record LectureProgress(
 
         string? pdf = Directory.GetFiles(folder, "*.pdf")
             .FirstOrDefault(f => Path.GetFileName(f).Equals($"{lecture}.pdf", StringComparison.OrdinalIgnoreCase))
-            ?? Directory.GetFiles(folder, "step4-*-final*.pdf").FirstOrDefault()
-            ?? Directory.GetFiles(folder, "step5-*-last_try*.pdf").FirstOrDefault();
+            ?? Directory.GetFiles(folder, "step4-*-final*.pdf").FirstOrDefault(f => !IsSideFile(f))
+            ?? Directory.GetFiles(folder, "step5-*-last_try*.pdf").FirstOrDefault(f => !IsSideFile(f));
         if (pdf != null && new FileInfo(pdf).Length == 0) {
             pdf = null;
         }
@@ -130,18 +131,32 @@ public sealed record LectureProgress(
         || Directory.GetFiles(folder, "step1-*.tex").Length > 0
         || Directory.GetFiles(folder, "*.pdf").Length > 0;
 
-    /// <summary>
-    /// The newest file matching <paramref name="pattern"/>, skipping the "-main.tex" standalone copies
-    /// a compile writes beside a step's output (preamble included): they are no step's input. Also
-    /// skips the "-truncated.tex" fragment a refinement step saves when its answer broke off: the step
-    /// failed, so the fragment neither proves it finished nor feeds the next one. On 2026-11-02 'finish'
-    /// planned step 3 from a step3-...-speech_refined-truncated.tex, which would have lost the end of
-    /// the lecture.
-    /// </summary>
+    /// <summary>The newest file matching <paramref name="pattern"/> that is a step's output, not a <see cref="IsSideFile"/>.</summary>
     private static string? Newest(string folder, string pattern) =>
         Directory.GetFiles(folder, pattern)
-            .Where(f => !f.EndsWith("-main.tex", StringComparison.OrdinalIgnoreCase)
-                && !f.EndsWith("-truncated.tex", StringComparison.OrdinalIgnoreCase))
+            .Where(f => !IsSideFile(f))
             .OrderByDescending(File.GetLastWriteTimeUtc)
             .FirstOrDefault();
+
+    /// <summary>
+    /// [AI Context] Whether a file only sits beside a step's output although its name matches the step's
+    /// pattern, so it is neither the next step's input nor proof the step finished:
+    /// <list type="bullet">
+    /// <item>"-main": the standalone copy a compile writes (preamble included).</item>
+    /// <item>"-truncated": the fragment a refinement step saves when its answer broke off; the step failed.
+    /// On 2026-11-02 'finish' planned step 3 from a step3-...-speech_refined-truncated.tex, which would
+    /// have lost the end of the lecture.</item>
+    /// <item>"-orig", "-origN": the backup taken before a PDF repair (with the failed compile's partial
+    /// PDF). Its text is the step's file as it was then, and it is written after it, so it was the newest:
+    /// 'finish' planned 'pdf compile' on grundstrukturen 04-21-25's backup, and a repair would then have
+    /// edited the backup.</item>
+    /// <item>"-tryN", "-tryN-rejected": the Antigravity repair's candidates. A winning one is copied over
+    /// the step's file and published, so one left over failed or was refused.</item>
+    /// </list>
+    /// [Human] Dateien neben einem Schrittergebnis, die selbst keines sind.
+    /// </summary>
+    private static bool IsSideFile(string path) => SideFileRegex().IsMatch(Path.GetFileName(path));
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"-(main|truncated|orig\d*|try\d+(-rejected)?)\.(tex|pdf)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex SideFileRegex();
 }
