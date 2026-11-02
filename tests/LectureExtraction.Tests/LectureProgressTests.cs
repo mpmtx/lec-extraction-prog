@@ -79,6 +79,27 @@ public class LectureProgressTests : IDisposable {
     }
 
     [Fact]
+    public void A_failed_steps_truncated_fragment_is_neither_its_output_nor_the_next_input() {
+        // Information Security 02-29, 2026-11-02: step 2 broke off, was redone, then step 3 broke off.
+        Touch($"step1-{Lecture}-all-offset.tex");
+        Touch($"step2-{Lecture}-offset-merged-truncated.tex");
+        var p = LectureProgress.Scan(_folder);
+        Assert.Equal(LectureStage.Merge, p.NextStage);
+        Assert.Equal($"step1-{Lecture}-all-offset.tex", Path.GetFileName(p.NextInput));
+
+        Touch($"step2-{Lecture}-offset-merged.tex");
+        Touch($"step3-{Lecture}-offset-speech_refined-truncated.tex");
+        Touch($"step4-{Lecture}-offset-final-truncated.tex");
+        p = LectureProgress.Scan(_folder);
+
+        Assert.Equal(LectureStage.Speech, p.NextStage);
+        Assert.Equal($"step2-{Lecture}-offset-merged.tex", Path.GetFileName(p.NextInput));
+        Assert.Equal(
+            ["refine", "run", "--tex", p.NextInput!, "--step", "2", "--through-end"],
+            FinishCommand.PlanActions([p], _ => null, []).Single().Arguments!);
+    }
+
+    [Fact]
     public void The_lectures_pdf_means_done() {
         Touch($"step4-{Lecture}-all-offset-final.tex");
         Touch($"{Lecture}.pdf");

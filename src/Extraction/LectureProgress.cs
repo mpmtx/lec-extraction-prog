@@ -25,7 +25,8 @@ public enum LectureStage {
 /// [AI Context] What one lecture output folder holds and which stage comes next, read from the file
 /// names the pipeline writes (see docs/cli/pipeline.md). Shared by `status` and `finish`, so the
 /// report and the action cannot disagree. Each refinement step's input is the newest file with that
-/// step's prefix, re-run copies (-copy-N) included: step N reads the stepN-* file.
+/// step's prefix, re-run copies (-copy-N) included: step N reads the stepN-* file. A failed step's
+/// "-truncated.tex" fragment never counts: the step is redone from its own input.
 /// [Human] Was ein Vorlesungsordner enthält und welcher Schritt als Nächstes fällig ist.
 /// </summary>
 public sealed record LectureProgress(
@@ -131,11 +132,16 @@ public sealed record LectureProgress(
 
     /// <summary>
     /// The newest file matching <paramref name="pattern"/>, skipping the "-main.tex" standalone copies
-    /// a compile writes beside a step's output (preamble included): they are no step's input.
+    /// a compile writes beside a step's output (preamble included): they are no step's input. Also
+    /// skips the "-truncated.tex" fragment a refinement step saves when its answer broke off: the step
+    /// failed, so the fragment neither proves it finished nor feeds the next one. On 2026-11-02 'finish'
+    /// planned step 3 from a step3-...-speech_refined-truncated.tex, which would have lost the end of
+    /// the lecture.
     /// </summary>
     private static string? Newest(string folder, string pattern) =>
         Directory.GetFiles(folder, pattern)
-            .Where(f => !f.EndsWith("-main.tex", StringComparison.OrdinalIgnoreCase))
+            .Where(f => !f.EndsWith("-main.tex", StringComparison.OrdinalIgnoreCase)
+                && !f.EndsWith("-truncated.tex", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(File.GetLastWriteTimeUtc)
             .FirstOrDefault();
 }

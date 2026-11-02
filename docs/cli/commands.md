@@ -233,6 +233,15 @@ the one command that continues it, as if typed:
 The newest file of a stage wins, `-copy-N` re-runs included; the `-main.tex` copies a compile
 leaves behind are skipped. Folders without any `.tex` (not started) are left to `run`.
 
+A `-truncated.tex` file is never a stage's output. A refinement step whose answer broke off (eight
+`503`s on a continue, say) saves the fragment as `<its output>-truncated.tex` and fails, so `finish`
+(and `status`, `plan`, which read the same scan) treats that step as not done and redoes it from its
+own input. A folder with `step2-*-merged.tex` and only `step3-*-speech_refined-truncated.tex` gets
+`refine run --tex <the merged file> --step 2 --through-end`; a failed merge is redone from the
+combined file. Until 2026-11-02 the fragment counted as the finished step and the next step was
+built on it, losing the end of the lecture. The fragment stays on disk for inspection; a successful
+redo writes the step's normal name beside it.
+
 ```bash
 lecx finish --folder "D:/lecture-videos/analysis2/extracted_output" --dry-run   # table + exact commands, free
 lecx finish --folder "<one lecture folder>"
