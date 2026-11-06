@@ -67,7 +67,10 @@ profile would double the load on one key.
 
 The keys are free tier. Google's limit is
 `GenerateRequestsPerDayPerProjectPerModel-FreeTier (limit: 20)`: 20 generate requests per
-day, **per key (project) and per model name**. It resets at 00:00 UTC (02:00 summer time).
+day, **per key (project) and per model name**. It resets at about 09:00 Swiss time (midnight
+Pacific), not at 00:00 UTC: a refusal at 00:21 on 2026-11-06 said `Please retry in 8h38m`. One
+reading so far. The `Reset in …` countdown of `lecx quota` and `config profiles` still assumes
+00:00 UTC, so it reaches zero about eight hours before the quota returns.
 One lecture with 4 parts and refinement needs well over 7 requests (parts, continues,
 refinement steps), so one key gets through about two lectures per model per day.
 
@@ -85,14 +88,22 @@ refinement steps), so one key gets through about two lectures per model per day.
   `FreeTier (limit` text. The app simply waits it out (`Please retry in 41s`) and the run
   succeeds, so a script that greps for `FreeTier` reports a false "quota exhausted" for a
   lecture that finished. Only `GenerateRequestsPerDayPerProjectPerModel` means the day is over.
-- **`gemini-3.7-flash` is mapped to `gemini-3.8-flash`, with its own quota.** Requests to
+- **`gemini-3.7-flash` is mapped to `gemini-3.8-flash`; its own quota is no longer certain.** Requests to
   `gemini-3.7-flash` are answered by `gemini-3.8-flash` (user's observation; Google documents
   the same kind of routing for `gemini-3.5-flash` → `gemini-3.6-flash` on its "What's new in
   Gemini 3.5" page). The quota is still counted **per requested model name**: on 2026-10-13
   profiles 2 and 3 were refused for 3.8 after their daily 20 and served `gemini-3.7-flash`
-  right away. The `.tex` header records the requested name, 3.7.
+  right away. The `.tex` header records the requested name, 3.7. **That may no longer hold.** On
+  2026-11-06 a request for `gemini-3.7-flash` on profile 0 was refused with
+  `model: gemini-3.8-flash`, after about 18 or 19 attempts on 3.8 and 4 on 3.7 since the last
+  reset. That fits one shared budget of 20, with `503`s counting. One refusal only, so do not
+  plan on 3.7 as a second budget: when 3.8 is refused, the next key is the safer move.
 
 ## Eight workers on four keys
+
+**Possibly out of date:** this section relies on 3.7 and 3.8 having separate daily budgets, which
+the 2026-11-06 refusal above calls into question. If they share one, eight workers on four keys
+have four budgets, not eight.
 
 Because the two names have separate daily budgets (and, going by the limit's name `PerModelPerMinute`, separate per-minute ones too), each key can run **two**
 workers at once: one on `--model gemini-3.8-flash`, one on `--model gemini-3.7-flash`. Four

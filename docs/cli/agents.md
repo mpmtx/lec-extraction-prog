@@ -199,8 +199,9 @@ the 7th was part 4's first attempt, which ended in a 503. The log shows no strea
 it (`Die bisherige Teilantwort wird verworfen` is printed on every retry, it is no evidence of
 output). So at least some 503s count against the daily quota; which ones is still open.
 
-**A key low on 3.8 quota still has `--model gemini-3.7-flash`.** Google answers 3.7 requests with
-3.8 but counts the daily 20 per requested model name, so the same profile gets a second budget
+**A key low on 3.8 quota may not gain anything from `--model gemini-3.7-flash`.** Google answers 3.7 requests with
+3.8. It used to count the daily 20 per requested model name, but on 2026-11-06 a 3.7 request was
+refused under `model: gemini-3.8-flash`, so the second budget is no longer certain
 (`parallel.md` § Free-tier quota). Resuming a video on 3.7 after its 3.8 parts is fine: each part's
 `.tex` header records the name it was requested under.
 
