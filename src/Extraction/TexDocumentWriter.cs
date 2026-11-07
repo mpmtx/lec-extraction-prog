@@ -116,8 +116,10 @@ public static partial class TexDocumentWriter {
     /// [Human] Header-Block eines Refinement-Schritts.
     /// </summary>
     /// <param name="thoughtsFileName">The step's thoughts file, when thought summaries were written.</param>
+    /// <param name="notes">Further lines about how the output was made (step 2: what the non-speech guard did).</param>
     public static string BuildRefinementHeader(string stepLabel, string outputFileName, string? inputFileName,
-        TokenUsage usage, string model, GenerationParameters generation, string? thoughtsFileName = null) {
+        TokenUsage usage, string model, GenerationParameters generation, string? thoughtsFileName = null,
+        IReadOnlyList<string>? notes = null) {
         var lines = new List<string> { stepLabel, $"Output: {outputFileName}" };
         if (!string.IsNullOrEmpty(inputFileName)) {
             lines.Add($"Input: {inputFileName}");
@@ -125,6 +127,7 @@ public static partial class TexDocumentWriter {
         lines.AddRange(ModelLines(model, generation));
         lines.Add($"Processed on: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         AddThoughtsLine(lines, thoughtsFileName);
+        if (notes != null) lines.AddRange(notes);
         return Layer(lines, TokenLines(usage, "Token Usage"));
     }
 

@@ -160,6 +160,54 @@ facts after that.
 Token counts: *Output* is the visible answer only, *Thinking* is billed on top of it, and a
 step that needed continue requests reports the sum over all of them.
 
+## Refinement step 2 changes only the `speech` blocks
+
+Step 2 (speech refinement) re-emits the whole document, ~165 KB, and makes copy slips outside
+`speech` that no prompt wording prevents. On 2026-11-07 it turned
+`(R1) -- node[below left=-1pt] {$q$} (RQ)` into `(V1) -- ...` inside a tikzpicture. Run over
+the step-2/step-3 pairs on disk, the same check found a dropped `$` in a `content` block, `\&`
+turned into `&` in an `aiNote` title, `&\le` turned into `&=` in an `align`, moved TikZ
+coordinates, a dropped `content` block and dropped `% --- TEIL n` separators.
+
+So the program, not the model, owns everything outside `speech` (`NonSpeechGuard`). After the
+answer arrives, the step splits its input and the answer into **segments**: the text between
+two speech blocks, plus the text before the first and after the last. Each segment of the
+output is taken from the input; only the speech blocks come from the model. What the prompt
+allows outside `speech` is kept from the answer:
+
+- new `% [REFINER-FLAG: ...]` and `% [TIMESTAMP-SUSPECT: ...]` comment lines, in the place the
+  model put them;
+- new `student` blocks split out of a student quote. A quote in the middle of a block splits it
+  in two and adds a segment that holds only the student block; the guard matches the input's
+  segments to the answer's around such additions. A quote at a block's start or end adds no
+  speech block, and the new student block is kept where it lands.
+
+Everything else the model changed outside `speech` is undone, fixes included: a `$` the model
+added to a broken formula in a `content` block is removed again. The prompt leaves those fixes to
+the final step, and the compile before step 3 hands it the errors. An existing `student` block
+the model edited (for example by removing an "uh") is also restored.
+
+**Where to see what it did.** The step's header layer gets one line, for example
+
+```
+% Non-speech guard: restored 1 of 75 segments outside speech from the input (input line 2012)
+```
+
+and the console names each restored segment with its first differing line (`[Step 2]
+Nicht-speech-Schutz: ...`, then `Eingabe-Zeile 2012: Eingabe "..." / Modell "..."`). The line
+numbers refer to the step's input file (`step2-...-merged.tex`). Segments that differed only in
+blank lines or spaces are restored too and only counted.
+
+**When it does nothing.** If the structure cannot be matched, the guard leaves the answer as it
+is, warns (`Nicht-speech-Schutz nicht angewendet: ...`), and the header line says
+`not applied (...)`. That happens when `\begin{speech}`/`\end{speech}` do not alternate in the
+input or the answer, when the answer has fewer speech blocks than the input (the model merged or
+dropped some), when an added segment holds more than a student block, and when, after a split,
+more than five segments, and more than a quarter of them, would need restoring (that many
+restorations more likely mean a wrong matching than that many slips). Then the output is
+exactly what the step wrote before the guard existed. Steps 1 and 3 change content blocks on
+purpose and are not guarded.
+
 ## Continue requests ("please continue")
 
 A response that stops before the model's completion marker (cut off at `MaxOutputTokens`,

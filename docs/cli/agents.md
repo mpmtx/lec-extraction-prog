@@ -369,6 +369,16 @@ the text received so far is a fragment. The loop reports that (`GenerationEnd` /
 A run that stops on the request budget (`MaxContinueRequests`) is *not* treated this way:
 the text is complete up to the budget and is kept as before.
 
+**Refinement step 2 cannot change anything outside `speech`.** Everything between the speech
+blocks in `step3-*-speech_refined.tex` is copied from the step's input, apart from new
+`REFINER-FLAG` / `TIMESTAMP-SUSPECT` comment lines and new `student` blocks split out of a quote.
+So when you review a lecture, a difference outside `speech` between `step2-*-merged.tex` and
+`step3-*` is one of those, or the file comes from a run before 2026-11-07 or from one where the
+guard was not applied. The step's header layer
+says what the guard did (`% Non-speech guard: restored N of M segments ... (input line ...)`, or
+`not applied (...)` when the structure did not match and the model's answer was kept as it was).
+Details in [pipeline.md](pipeline.md#refinement-step-2-changes-only-the-speech-blocks).
+
 **A menu can never be auto-answered.** If a flow reaches an interactive choice, the run
 fails with exit `3` naming the question rather than picking the first entry. That is
 deliberate: guessing a menu entry is how an unattended run buys the wrong model. Supply

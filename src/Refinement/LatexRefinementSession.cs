@@ -382,7 +382,7 @@ public partial class LatexRefinementSession {
 
             Ui.Info("Verwende Multi-Turn-Struktur für Schritt 2 (Simulation von Text-Dokument + Audio-Refinement).", "Step 2");
             AttachmentUploader.HasJustUploaded = false;
-            result = await RunRefinementStepAsync(_config.Step2SpeechRefinement, TexDocumentWriter.SpeechStep, "speech", inputFile, history, targetFolder, outputFileName, ContextCacheStateManager.StateFileLatexStep2);
+            result = await RunRefinementStepAsync(_config.Step2SpeechRefinement, TexDocumentWriter.SpeechStep, "speech", inputFile, history, targetFolder, outputFileName, ContextCacheStateManager.StateFileLatexStep2, restoreNonSpeech: true);
         }
         else {
             var parts = new List<Part> {
@@ -390,7 +390,7 @@ public partial class LatexRefinementSession {
                 new() { Text = $"<input_tex>\n{content}\n</input_tex>" }
             };
             AttachmentUploader.HasJustUploaded = false;
-            result = await RunRefinementStepAsync(_config.Step2SpeechRefinement, TexDocumentWriter.SpeechStep, "speech", inputFile, parts, targetFolder, outputFileName, ContextCacheStateManager.StateFileLatexStep2);
+            result = await RunRefinementStepAsync(_config.Step2SpeechRefinement, TexDocumentWriter.SpeechStep, "speech", inputFile, parts, targetFolder, outputFileName, ContextCacheStateManager.StateFileLatexStep2, restoreNonSpeech: true);
         }
 
         if (_config.UseVertex) {
@@ -424,16 +424,17 @@ public partial class LatexRefinementSession {
         return result;
     }
 
-    private async Task<string?> RunRefinementStepAsync(RefinementStepConfig stepConfig, string stepLabel, string thoughtStageKey, string inputFile, List<Part> userPromptParts, string targetOutputFolder, string outputFileName, string cacheStateFileName) {
+    private async Task<string?> RunRefinementStepAsync(RefinementStepConfig stepConfig, string stepLabel, string thoughtStageKey, string inputFile, List<Part> userPromptParts, string targetOutputFolder, string outputFileName, string cacheStateFileName, bool restoreNonSpeech = false) {
         var finalPromptParts = new List<Part>(userPromptParts);
         var history = new List<Content> { new() { Role = "user", Parts = finalPromptParts } };
-        return await RunRefinementStepAsync(stepConfig, stepLabel, thoughtStageKey, inputFile, history, targetOutputFolder, outputFileName, cacheStateFileName);
+        return await RunRefinementStepAsync(stepConfig, stepLabel, thoughtStageKey, inputFile, history, targetOutputFolder, outputFileName, cacheStateFileName, restoreNonSpeech);
     }
 
     /// <param name="stepLabel">The step name heading this step's header layer (a <see cref="TexDocumentWriter"/> constant).</param>
     /// <param name="thoughtStageKey">The short stage name its thoughts file carries (<c>merge</c>, <c>speech</c>, <c>final</c>), what <c>lecx thoughts --stage</c> matches.</param>
     /// <param name="inputFile">The file the step works on: its header layers and per-part blocks are carried into the output.</param>
-    private async Task<string?> RunRefinementStepAsync(RefinementStepConfig stepConfig, string stepLabel, string thoughtStageKey, string inputFile, List<Content> history, string targetOutputFolder, string outputFileName, string cacheStateFileName) {
+    /// <param name="restoreNonSpeech">Step 2 only: everything outside the speech blocks is taken from <paramref name="inputFile"/> (<see cref="NonSpeechGuard"/>).</param>
+    private async Task<string?> RunRefinementStepAsync(RefinementStepConfig stepConfig, string stepLabel, string thoughtStageKey, string inputFile, List<Content> history, string targetOutputFolder, string outputFileName, string cacheStateFileName, bool restoreNonSpeech = false) {
         BackendParameters backendParams = _config.UseVertex ? stepConfig.Vertex : stepConfig.AiStudio;
 
         string systemInstructionText = await ResolveSystemInstructionTextAsync(stepConfig);
@@ -517,9 +518,25 @@ public partial class LatexRefinementSession {
             var (_, body) = TexDocumentWriter.SplitHeaderLayers(LatexResponseCleaner.CleanLatexResponse(fullResponseText));
             body = TexDocumentWriter.RestorePartHeaders(body, TexDocumentWriter.ExtractPartHeaders(inputText));
 
+            // IMPORTANT: step 2 re-emits the whole document and makes copy slips outside `speech` that no
+            // prompt wording stops (2026-11-07: "(R1) --" retyped as "(V1) --" in a tikzpicture). Everything
+            // outside the speech blocks therefore comes back from the input, apart from the flag lines and
+            // student-quote splits the prompt allows. The input body goes through the same end-tag repair as
+            // the answer did, so restoring never brings back what the cleaner fixed.
+            // [Human] Schritt 2 darf nur speech-Blöcke ändern: alles andere wird aus der Eingabe übernommen.
+            List<string>? headerNotes = null;
+            if (restoreNonSpeech) {
+                var (_, inputBody) = TexDocumentWriter.SplitHeaderLayers(inputText);
+                int lineOffset = LinesBeforeBody(inputText, inputBody);
+                var guard = NonSpeechGuard.Apply(inputBody.FixMalformedEndTags(), body);
+                NonSpeechGuard.Report(guard, lineOffset, "Step 2");
+                body = guard.Body;
+                headerNotes = [NonSpeechGuard.HeaderNote(guard, lineOffset)];
+            }
+
             string stepHeader = TexDocumentWriter.BuildRefinementHeader(
                 stepLabel, outputFileName, Path.GetFileName(inputFile), usage, backendParams.CurrentModel, backendParams.Generation,
-                Path.GetFileName(thoughts.FilePath));
+                Path.GetFileName(thoughts.FilePath), headerNotes);
 
             await System.IO.File.WriteAllTextAsync(outPath, TexDocumentWriter.StackLayers(stepHeader, inheritedLayers, body));
             Ui.Success($"Ergebnis gespeichert unter: {outPath}", "Refinement");
@@ -534,6 +551,17 @@ public partial class LatexRefinementSession {
         }
     }
     private Task CleanupBucketAsync() => GcsWorkspace.PurgeAsync(_config.VertexGcsBucketName);
+
+    /// <summary>
+    /// [AI Context] Lines of <paramref name="fileText"/> above <paramref name="body"/>, the suffix
+    /// <see cref="TexDocumentWriter.SplitHeaderLayers"/> returned: added to a body line number it gives
+    /// the line in the file.
+    /// </summary>
+    private static int LinesBeforeBody(string fileText, string body) {
+        string normalized = fileText.Replace("\r\n", "\n");
+        int bodyStart = Math.Max(0, normalized.Length - body.Length);
+        return normalized.AsSpan(0, bodyStart).Count('\n');
+    }
 
     /// <summary>
     /// [AI Context] Characters of LaTeX the step was given: the &lt;input_file&gt; / &lt;input_tex&gt;
