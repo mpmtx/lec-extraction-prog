@@ -46,6 +46,19 @@ public static partial class VideoDateParser {
         }
     }
 
+    /// <summary>
+    /// [AI Context] Sorts video files chronologically by parsed date, then week number, then filename.
+    /// Parses each filename once up front instead of repeatedly in OrderBy/ThenBy comparisons.
+    /// [Human] Sortiert Videodateien chronologisch nach Datum, Woche und Dateiname.
+    /// </summary>
+    public static IEnumerable<string> OrderChronologically(this IEnumerable<string> filePaths) =>
+        filePaths
+            .Select(f => (Path: f, Info: Parse(f)))
+            .OrderBy(x => x.Info.Date)
+            .ThenBy(x => x.Info.WeekNumber ?? int.MaxValue)
+            .ThenBy(x => x.Path)
+            .Select(x => x.Path);
+
     // Matches YYYY-MM-DD anywhere with delimiters
     [GeneratedRegex(@"(?:^|[-_.\s])(\d{4})-(\d{2})-(\d{2})(?:[-_.\s]|$)", RegexOptions.IgnoreCase)]
     private static partial Regex YyyyMmDdRegex();

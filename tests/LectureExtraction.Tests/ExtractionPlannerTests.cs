@@ -173,6 +173,19 @@ public class ExtractionPlannerTests : IDisposable {
 
         Assert.Equal(Path.Combine(_root, "extracted_output"), plan.TargetFolder);
     }
+
+    [Fact]
+    public void Warnings_IncludesMissingPromptPaths_WhenConfiguredPathDoesNotExist() {
+        var config = Config(parts: 1);
+        string missingPrompt = Path.Combine(_root, "non_existent_prompt.txt");
+        config.SystemInstructionPaths = [missingPrompt];
+
+        var plan = ExtractionPlanner.Build(config, [Video("02-16-2026-monday-week1-Analysis.mp4")], ExtractionPlanner.DefaultResumeWindowHours, force: false);
+
+        Assert.NotNull(plan.MissingPromptPaths);
+        Assert.Contains(missingPrompt, plan.MissingPromptPaths);
+        Assert.Contains(plan.Warnings, w => w.Contains(missingPrompt));
+    }
 }
 
 /// <summary>The base-name derivation the planner and the pipeline must agree on.</summary>

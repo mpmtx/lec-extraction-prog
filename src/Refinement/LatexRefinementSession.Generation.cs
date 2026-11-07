@@ -32,7 +32,7 @@ public partial class LatexRefinementSession {
         string systemInstructionText = "";
         if (stepConfig.SystemInstructionPaths != null && stepConfig.SystemInstructionPaths.Length > 0) {
             Ui.Info("Folgende System-Instruktionen sind konfiguriert:", "LaTeX Refinement");
-            var resolved = HistoryFileResolver.ResolveHistoryFiles(stepConfig.SystemInstructionPaths);
+            var resolved = HistoryFileResolver.ResolveHistoryFiles(stepConfig.SystemInstructionPaths, "SystemInstructionPath");
             FileTreeRenderer.PrintFileTree(resolved);
             foreach (var path in resolved) {
                 if (System.IO.File.Exists(path)) {

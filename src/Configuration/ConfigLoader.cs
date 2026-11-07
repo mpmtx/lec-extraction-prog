@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Text;
 using LectureExtraction.ConsoleUi;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
@@ -37,7 +38,10 @@ public static class ConfigLoader<T> where T : class, new() {
             }
         }
 
-        // Run JSON migrator on disk file if legacy flat keys exist
+        // Run JSON migrator on disk file if legacy flat keys exist. With saving disabled (CLI default)
+        // the migrated JSON is bound from memory only: an unattended run must not rewrite the file,
+        // and with --config-dir that file is the user's live configuration.
+        string? migratedInMemory = null;
         if (File.Exists(filePath)) {
             try {
                 string rawText = File.ReadAllText(filePath);
@@ -45,7 +49,13 @@ public static class ConfigLoader<T> where T : class, new() {
                     var jObj = JObject.Parse(rawText);
                     if (ConfigMigrator.Migrate(jObj, typeof(T))) {
                         string migrated = JsonCommentPreserver.Merge(rawText, jObj, ConfigMigrator.RemapAnchor);
-                        File.WriteAllText(filePath, migrated);
+                        if (ConfigStore.SaveEnabled) {
+                            File.WriteAllText(filePath, migrated);
+                        }
+                        else {
+                            migratedInMemory = migrated;
+                            Ui.Detail($"'{fileName}' enthält alte Schlüssel; migriert nur im Arbeitsspeicher (Konfiguration ist schreibgeschützt).", "ConfigMigrator");
+                        }
                     }
                 }
             }
@@ -55,11 +65,16 @@ public static class ConfigLoader<T> where T : class, new() {
         }
 
         // Build configuration object with clear hierarchy.
-        var configuration = new ConfigurationBuilder()
+        var builder = new ConfigurationBuilder()
             .SetBasePath(basePath)
-            .AddJsonFile("appsettings.json", optional: true)
-            .AddJsonFile(fileName, optional: true)
-            .Build();
+            .AddJsonFile("appsettings.json", optional: true);
+        if (migratedInMemory != null) {
+            builder.AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes(migratedInMemory)));
+        }
+        else {
+            builder.AddJsonFile(fileName, optional: true);
+        }
+        var configuration = builder.Build();
 
         var config = new T();
 

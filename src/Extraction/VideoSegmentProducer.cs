@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
+using System.Threading;
 using System.Threading.Tasks;
 using LectureExtraction.Configuration;
 using LectureExtraction.ConsoleUi;
@@ -24,16 +25,34 @@ namespace LectureExtraction.Extraction;
 /// Cache, verarbeitet und splittet Videos, und schreibt das Ergebnis in den gemeinsamen Kanal.
 /// </summary>
 public static partial class VideoSegmentProducer {
-    public static async Task RunAsync(string[] files, ChannelWriter<PreparedVideo> writer, IAutoExtractionConfig config) {
+    /// <summary>
+    /// [AI Context] Completes <paramref name="writer"/> on every exit, so a consumer reading the channel
+    /// never waits forever on a producer that threw; the exception itself surfaces where the caller
+    /// awaits this task. <paramref name="cancellationToken"/> lets a consumer that stopped early release
+    /// a producer blocked on the full channel.
+    /// [Human] Schließt den Kanal immer ab, auch bei einem Fehler, damit der Verbraucher nicht hängen bleibt.
+    /// </summary>
+    public static async Task RunAsync(string[] files, ChannelWriter<PreparedVideo> writer, IAutoExtractionConfig config, CancellationToken cancellationToken = default) {
+        try {
+            await ProduceAsync(files, writer, config, cancellationToken);
+        }
+        finally {
+            writer.TryComplete(); // Signalisiert dem Fließband: "Feierabend, es kommen keine Videos mehr."
+        }
+    }
+
+    private static async Task ProduceAsync(string[] files, ChannelWriter<PreparedVideo> writer, IAutoExtractionConfig config, CancellationToken cancellationToken) {
         double speed = config.SpeedMultiplier;
         // Chronologisch aufsteigend sortieren anhand des Dateinamens und der Woche
-        files = [.. files.OrderBy(videoFile => VideoDateParser.Parse(videoFile).Date).ThenBy(videoFile => VideoDateParser.Parse(videoFile).WeekNumber ?? int.MaxValue).ThenBy(videoFile => videoFile)];
+        files = [.. files.OrderChronologically()];
 
         foreach (var rawFile in files) {
+            cancellationToken.ThrowIfCancellationRequested();
             string file = ExtractionHelpers.ResolveCompressedVariantIfExists(rawFile);
             string baseName = ExtractionHelpers.ComputeOutputFolderName(file);
             // Create a file-specific output folder within the main target folder
-            string fileSpecificOutputFolder = Path.Combine(config.TargetFolder, baseName);
+            string targetRoot = ExtractionHelpers.OutputRoot(config);
+            string fileSpecificOutputFolder = Path.Combine(targetRoot, baseName);
             if (!Directory.Exists(fileSpecificOutputFolder)) {
                 Directory.CreateDirectory(fileSpecificOutputFolder);
             }
@@ -113,7 +132,7 @@ public static partial class VideoSegmentProducer {
                     cachedPartsWithTimes.Add(new VideoSegment(cachedParts[i], startTime));
                 }
 
-                await writer.WriteAsync(new PreparedVideo(file, fileSpecificOutputFolder, tmpFolderForFile, cachedPartsWithTimes, true, fullOriginalVideoDuration));
+                await writer.WriteAsync(new PreparedVideo(file, fileSpecificOutputFolder, tmpFolderForFile, cachedPartsWithTimes, true, fullOriginalVideoDuration), cancellationToken);
                 continue;
             }
 
@@ -160,9 +179,8 @@ public static partial class VideoSegmentProducer {
 
                     safePartsWithTimes.Add(new VideoSegment(safePartPath, rawPartsWithTimes[i].StartTimeSeconds));
                 }
-                await writer.WriteAsync(new PreparedVideo(file, fileSpecificOutputFolder, tmpFolderForFile, safePartsWithTimes, false, fullOriginalVideoDuration));
+                await writer.WriteAsync(new PreparedVideo(file, fileSpecificOutputFolder, tmpFolderForFile, safePartsWithTimes, false, fullOriginalVideoDuration), cancellationToken);
             }
         }
-        writer.Complete(); // Signalisiert dem Fließband: "Feierabend, es kommen keine Videos mehr."
     }
 }

@@ -89,6 +89,37 @@ public class ConfigStoreTests : IDisposable {
     }
 
     [Fact]
+    public void Load_MigratesInMemoryOnly_WhenSavingIsDisabled() {
+        // With --config-dir the file is the user's live config; a read-only run must leave it as it
+        // was, legacy keys included, and still bind the migrated values.
+        string file = Path.Combine(_directory, $"{nameof(AiStudioAutoExtractionConfig)}.json");
+        string legacy = "{\n  \"Temperature\": 0.11,\n  \"TopK\": 33\n}\n";
+        File.WriteAllText(file, legacy);
+        ConfigStore.DirectoryOverride = _directory;
+        ConfigStore.SaveEnabled = false;
+
+        var loaded = ConfigLoader<AiStudioAutoExtractionConfig>.Load();
+
+        Assert.Equal(legacy, File.ReadAllText(file));
+        Assert.Equal(0.11f, loaded.Temperature, 3);
+        Assert.Equal(33, loaded.TopK);
+    }
+
+    [Fact]
+    public void Load_RewritesALegacyFile_WhenSavingIsEnabled() {
+        string file = Path.Combine(_directory, $"{nameof(AiStudioAutoExtractionConfig)}.json");
+        string legacy = "{\n  \"Temperature\": 0.11,\n  \"TopK\": 33\n}\n";
+        File.WriteAllText(file, legacy);
+        ConfigStore.DirectoryOverride = _directory;
+        ConfigStore.SaveEnabled = true;
+
+        var loaded = ConfigLoader<AiStudioAutoExtractionConfig>.Load();
+
+        Assert.NotEqual(legacy, File.ReadAllText(file));
+        Assert.Equal(0.11f, loaded.Temperature, 3);
+    }
+
+    [Fact]
     public void Load_SyncsFromCurrentDirectory_WhenCurrentDirectoryIsNewer() {
         ConfigStore.Reset();
         string fileName = $"{nameof(FfmpegSessionConfig)}.json";

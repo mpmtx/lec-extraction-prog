@@ -317,7 +317,11 @@ public static class RefinementUiHelper {
         }
         else {
             string envName = ResolveRefinementKeyEnvName(refinementConfig);
-            string refinementApiKey = GoogleAiClientBuilder.ResolveApiKeyByName(envName) ?? "no-key";
+            string? refinementApiKey = GoogleAiClientBuilder.ResolveApiKeyByName(envName);
+            if (string.IsNullOrEmpty(refinementApiKey)) {
+                Ui.Error($"Der API-Key für das Refinement ('{envName}') ist nicht gesetzt.", "Refinement");
+                return false;
+            }
             refinementClient = GoogleAiClientBuilder.BuildAiStudioClient(refinementApiKey);
         }
 

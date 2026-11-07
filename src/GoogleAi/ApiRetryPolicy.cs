@@ -226,7 +226,8 @@ public static partial class ApiRetryPolicy {
         int maxRetries = 8,
         int initialBackoff = 45,
         string retryContext = "",
-        int? highDemandDelay = null) where T : class {
+        int? highDemandDelay = null,
+        CancellationToken cancellationToken = default) where T : class {
         int backoff = initialBackoff;
         int uncountedNetworkWaits = 0;
 
@@ -239,6 +240,9 @@ public static partial class ApiRetryPolicy {
                 SessionCostLedger.RecordRequest(isGeneration: false, attempt);
                 return await apiCall();
             }
+            catch (Exception ex) when (cancellationToken.IsCancellationRequested && (ex is OperationCanceledException || ex.InnerException is OperationCanceledException)) {
+                return null; // User cancelled
+            }
             catch (Exception rawEx) {
                 var ex = (rawEx is OperationCanceledException || rawEx.InnerException is OperationCanceledException)
                     ? new TimeoutException("The API request timed out.", rawEx)
@@ -248,7 +252,7 @@ public static partial class ApiRetryPolicy {
                 // No DNS / no route: not counted, see ExecuteStreamWithRetryAsync. Even on the last attempt
                 // an outage is waited out instead of failing the call.
                 if (IsTransientError(ex)) {
-                    var outage = await WaitOutNetworkOutageAsync(ex, ContextPrefix(retryContext), uncountedNetworkWaits, CancellationToken.None);
+                    var outage = await WaitOutNetworkOutageAsync(ex, ContextPrefix(retryContext), uncountedNetworkWaits, cancellationToken);
                     if (outage == NetworkOutage.Cancelled) {
                         return null; // User cancelled the wait
                     }

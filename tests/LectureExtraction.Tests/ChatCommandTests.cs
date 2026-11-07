@@ -65,4 +65,16 @@ public class ChatCommandTests : IDisposable {
         int code = await CliBootstrapper.RunAsync(["chat", "--backend", "unknown"]);
         Assert.Equal(ExitCodes.Usage, code);
     }
+
+    [Fact]
+    public void ChatSessions_InheritFromUnifiedDirectAiChatSession() {
+        var aiStudioConfig = new DirectAiChatSessionAiStudioConfig();
+        var vertexConfig = new DirectAiChatSessionVertexConfig();
+
+        var aiStudioSession = new LectureExtraction.Chat.DirectAiChatSessionAiStudio(null!, aiStudioConfig, null!, null!);
+        var vertexSession = new LectureExtraction.Chat.DirectAiChatSessionVertex(null!, vertexConfig, null!, null!);
+
+        Assert.IsAssignableFrom<LectureExtraction.Chat.DirectAiChatSession>(aiStudioSession);
+        Assert.IsAssignableFrom<LectureExtraction.Chat.DirectAiChatSession>(vertexSession);
+    }
 }

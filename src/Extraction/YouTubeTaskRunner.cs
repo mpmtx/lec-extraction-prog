@@ -86,7 +86,8 @@ public sealed class YouTubeTaskRunner(IAutoExtractionConfig config, IYouTubeTran
             baseName = "step1-" + baseName;
         }
 
-        string fileSpecificOutputFolder = Path.Combine(_config.TargetFolder, baseName);
+        string targetRoot = ExtractionHelpers.OutputRoot(_config);
+        string fileSpecificOutputFolder = Path.Combine(targetRoot, baseName);
         if (!Directory.Exists(fileSpecificOutputFolder)) {
             Directory.CreateDirectory(fileSpecificOutputFolder);
         }

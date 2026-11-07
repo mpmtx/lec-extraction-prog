@@ -15,7 +15,7 @@ public interface IAutoExtractionConfig {
     bool GenerateAudioFile { get; }
     NumberOfParts NumberOfParts { get; }
     int OverlapSeconds { get; }
-    string SourceFolder { get; }
+    string SourceFolder { get; set; }
     string[] PredefinedSourceFolders { get; }
     string TargetFolder { get; set; }
     string LogFolder { get; }
@@ -42,7 +42,9 @@ public interface IAutoExtractionConfig {
     ThoughtSummaryConfig ThoughtSummaries { get; }
 
     // Model and generation parameters
-    string CurrentModel { get; }
+    string[] Model { get; }
+    int CurrentModelIndex { get; set; }
+    string CurrentModel { get; set; }
     GenerationParameters Generation { get; }
     float Temperature { get; }
     float TopP { get; }

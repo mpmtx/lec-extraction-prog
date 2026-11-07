@@ -132,7 +132,8 @@ public static class RunCommand {
 
     internal static AutoExtractionSession BuildSession(AiStudioAutoExtractionConfig config, double resumeWindowHours, ParseResult parseResult) {
         string envName = ApiKeyProfileResolver.Resolve(config.ActiveApiProfile, config.AiStudioApiKeyEnvNames);
-        string apiKey = GoogleAiClientBuilder.ResolveApiKeyByName(envName) ?? "no-key";
+        string apiKey = GoogleAiClientBuilder.ResolveApiKeyByName(envName)
+            ?? throw new InvalidOperationException($"Der API-Key für Profil {config.ActiveApiProfile} ('{envName}') ist nicht gesetzt.");
         Client client = GoogleAiClientBuilder.BuildAiStudioClient(apiKey);
 
         var attachmentHandler = new AttachmentUploader(

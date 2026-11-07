@@ -38,4 +38,8 @@ public class LatexRefinementSessionConfig {
     public RefinementStepConfig Step2SpeechRefinement { get; set; } = new();
 
     public RefinementStepConfig Step3LastRefinement { get; set; } = new();
+
+    /// <summary>Creates a deep copy so runtime overrides (e.g. disabling step 1 for 1-part videos) never mutate the loaded configuration.</summary>
+    public LatexRefinementSessionConfig Clone() =>
+        Newtonsoft.Json.JsonConvert.DeserializeObject<LatexRefinementSessionConfig>(Newtonsoft.Json.JsonConvert.SerializeObject(this))!;
 }

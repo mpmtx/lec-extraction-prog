@@ -1,5 +1,6 @@
 using System;
 using System.Text.Json.Serialization;
+using LectureExtraction.Chat;
 
 namespace LectureExtraction.Configuration;
 
@@ -7,7 +8,7 @@ namespace LectureExtraction.Configuration;
 /// [AI Context] DTO for Vertex AI specific configurations.
 /// Composes shared building blocks (VertexEndpoint, WorkspacePaths, ContextSources, ModelSelection).
 /// </summary>
-public class DirectAiChatSessionVertexConfig {
+public class DirectAiChatSessionVertexConfig : IChatConfig {
     public VertexEndpoint Endpoint { get; set; } = new();
     public WorkspacePaths Paths { get; set; } = new() {
         UploadFolder = AppConfig.UploadFolder,
@@ -38,4 +39,13 @@ public class DirectAiChatSessionVertexConfig {
     [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public string[] Model { get => ModelSelection.Available; set => ModelSelection.Available = value; }
     [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public int CurrentModelIndex { get => ModelSelection.CurrentIndex; set => ModelSelection.CurrentIndex = value; }
     [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public string CurrentModel { get => ModelSelection.Current; set => ModelSelection.Current = value; }
+
+    [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public float Temperature { get => AI.Temperature; set => AI.Temperature = value; }
+    [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public float TopP { get => AI.TopP; set => AI.TopP = value; }
+    [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public int TopK { get => AI.TopK; set => AI.TopK = value; }
+    [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public int MaxOutputTokens { get => AI.MaxOutputTokens; set => AI.MaxOutputTokens = value; }
+    [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public int? ThinkingBudget { get => AI.ThinkingBudget; set => AI.ThinkingBudget = value; }
+    [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public string? ThinkingLevel { get => AI.ThinkingLevel; set => AI.ThinkingLevel = value; }
+
+    public void Save() => ConfigLoader<DirectAiChatSessionVertexConfig>.Save(this);
 }

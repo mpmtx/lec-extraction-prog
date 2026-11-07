@@ -6,6 +6,7 @@ using System.Linq;
 using LectureExtraction.Configuration;
 using LectureExtraction.ConsoleUi;
 using LectureExtraction.Extraction;
+using LectureExtraction.Media;
 
 namespace LectureExtraction.Cli.Commands;
 
@@ -125,11 +126,7 @@ public static class PlanCommand {
         config.SourceFolder = Path.GetFullPath(folder);
         var rawVideos = Directory.GetFiles(config.SourceFolder, "*.mp4");
         var deduplicated = ExtractionHelpers.DeduplicatePreferCompressed(rawVideos);
-        var ordered = deduplicated
-            .OrderBy(video => Media.VideoDateParser.Parse(video).Date)
-            .ThenBy(video => Media.VideoDateParser.Parse(video).WeekNumber ?? int.MaxValue)
-            .ThenBy(video => video)
-            .ToList();
+        var ordered = deduplicated.OrderChronologically().ToList();
 
         string? from = parseResult.GetValue(From);
         if (!string.IsNullOrWhiteSpace(from)) {

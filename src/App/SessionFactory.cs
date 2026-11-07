@@ -37,7 +37,13 @@ public static class SessionFactory {
 
         string envName = ApiKeyProfileResolver.Resolve(config.ActiveApiProfile, config.AiStudioApiKeyEnvNames);
 
-        string apiKey = GoogleAiClientBuilder.ResolveApiKeyByName(envName) ?? "no-key";
+        // ResolveApiKeyByName has already printed which variable is missing; stop here instead of
+        // building a client with a placeholder key that only fails at the first request.
+        string? apiKey = GoogleAiClientBuilder.ResolveApiKeyByName(envName);
+        if (apiKey == null) {
+            Ui.Detail("Umgebungsvariable setzen oder ein anderes API-Key-Profil wählen.", "Direct AI Studio Chat");
+            return;
+        }
         Client client = GoogleAiClientBuilder.BuildAiStudioClient(apiKey);
         var attachmentHandler = new AttachmentUploader(client, config.UploadFolder, config.IncludePaths, true, config.GcsBucketName);
         var sessionLogger = new SessionLogger(ConfigLoader<SessionLoggerConfig>.Load());
@@ -94,6 +100,37 @@ public static class SessionFactory {
         }
     }
 
+    private enum SetupStepResult { Advanced, WentBack, Aborted }
+
+    private static SetupStepResult PromptFolderStep<TConfig>(TConfig config) where TConfig : class, IAutoExtractionConfig, new() {
+        var folder = ConfigurationPrompts.PromptForSourceFolder(config.SourceFolder, newFolder => {
+            config.SourceFolder = newFolder;
+            ConfigLoader<TConfig>.Save(config);
+        }, config.PredefinedSourceFolders);
+        if (folder.IsBack) return SetupStepResult.WentBack;
+        if (!folder.IsValue) return SetupStepResult.Aborted;
+        config.SourceFolder = folder.Value!;
+        return SetupStepResult.Advanced;
+    }
+
+    private static SetupStepResult PromptModelStep<TConfig>(TConfig config, string sessionTitle, bool isVertex) where TConfig : class, IAutoExtractionConfig, new() {
+        var model = ConfigurationPrompts.ConfirmOrChangeModel(config.CurrentModel, sessionTitle, config.Model, newModel => {
+            int idx = Array.IndexOf(config.Model, newModel);
+            if (idx >= 0) config.CurrentModelIndex = idx;
+            config.CurrentModel = newModel;
+            ConfigLoader<TConfig>.Save(config);
+            ModelSyncService.SyncModelToRefinementConfig(newModel, isVertex);
+        });
+        if (model.IsBack) return SetupStepResult.WentBack;
+        if (!model.IsValue) return SetupStepResult.Aborted;
+
+        config.CurrentModel = model.Value!;
+        config.CurrentModelIndex = Math.Max(0, Array.IndexOf(config.Model, config.CurrentModel));
+        ModelSyncService.SyncModelToRefinementConfig(config.CurrentModel, isVertex);
+        DirectoryTreeRenderer.DisplayFolderSummary(config.SourceFolder);
+        return SetupStepResult.Advanced;
+    }
+
     /// <summary>
     /// [AI Context] AI Studio extraction setup: source folder → model → API key profile → session.
     /// Returns <c>true</c> when the user stepped back out of the first prompt, so the caller can
@@ -107,32 +144,17 @@ public static class SessionFactory {
         while (true) {
             switch (step) {
                 case 0: {
-                    var folder = ConfigurationPrompts.PromptForSourceFolder(config.SourceFolder, newFolder => {
-                        config.SourceFolder = newFolder;
-                        ConfigLoader<AiStudioAutoExtractionConfig>.Save(config);
-                    }, config.PredefinedSourceFolders);
-                    if (folder.IsBack) return true;
-                    if (!folder.IsValue) return false;
-                    config.SourceFolder = folder.Value!;
+                    var res = PromptFolderStep(config);
+                    if (res == SetupStepResult.WentBack) return true;
+                    if (res == SetupStepResult.Aborted) return false;
                     step = 1;
                     break;
                 }
 
                 case 1: {
-                    var model = ConfigurationPrompts.ConfirmOrChangeModel(config.CurrentModel, "AI Studio Auto-Extraktion", config.Model, newModel => {
-                        int idx = Array.IndexOf(config.Model, newModel);
-                        if (idx >= 0) config.CurrentModelIndex = idx;
-                        config.CurrentModel = newModel;
-                        ConfigLoader<AiStudioAutoExtractionConfig>.Save(config);
-                        ModelSyncService.SyncModelToRefinementConfig(newModel, isVertex: false);
-                    });
-                    if (model.IsBack) { step = 0; break; }
-                    if (!model.IsValue) return false;
-
-                    config.CurrentModel = model.Value!;
-                    config.CurrentModelIndex = Math.Max(0, Array.IndexOf(config.Model, config.CurrentModel));
-                    ModelSyncService.SyncModelToRefinementConfig(config.CurrentModel, isVertex: false);
-                    DirectoryTreeRenderer.DisplayFolderSummary(config.SourceFolder);
+                    var res = PromptModelStep(config, "AI Studio Auto-Extraktion", isVertex: false);
+                    if (res == SetupStepResult.WentBack) { step = 0; break; }
+                    if (res == SetupStepResult.Aborted) return false;
                     step = 2;
                     break;
                 }
@@ -156,7 +178,13 @@ public static class SessionFactory {
 
                 default: {
                     string envName = ApiKeyProfileResolver.Resolve(config.ActiveApiProfile, config.AiStudioApiKeyEnvNames);
-                    string apiKey = GoogleAiClientBuilder.ResolveApiKeyByName(envName) ?? "no-key";
+                    // Fail before FFmpeg and uploads run, not at the first request (the variable's name is already printed).
+                    string? apiKey = GoogleAiClientBuilder.ResolveApiKeyByName(envName);
+                    if (apiKey == null) {
+                        Ui.Detail("Umgebungsvariable setzen oder ein anderes API-Key-Profil wählen.", "AI Studio Auto-Extraktion");
+                        step = 2;
+                        break;
+                    }
                     Client client = GoogleAiClientBuilder.BuildAiStudioClient(apiKey);
                     var attachmentHandler = new AttachmentUploader(client, config.SourceFolder, [config.SourceFolder], true, "", config.GoogleVideoFps, config.InlineHistoryImages, config.FileActivationDelaySeconds, config.VideoUploadTimeoutSeconds, config.VideoUploadMaxRetries) {
                         ClientFactory = () => GoogleAiClientBuilder.BuildAiStudioClient(apiKey)
@@ -184,32 +212,17 @@ public static class SessionFactory {
         while (true) {
             switch (step) {
                 case 0: {
-                    var folder = ConfigurationPrompts.PromptForSourceFolder(config.SourceFolder, newFolder => {
-                        config.SourceFolder = newFolder;
-                        ConfigLoader<VertexAutoExtractionConfig>.Save(config);
-                    }, config.PredefinedSourceFolders);
-                    if (folder.IsBack) return true;
-                    if (!folder.IsValue) return false;
-                    config.SourceFolder = folder.Value!;
+                    var res = PromptFolderStep(config);
+                    if (res == SetupStepResult.WentBack) return true;
+                    if (res == SetupStepResult.Aborted) return false;
                     step = 1;
                     break;
                 }
 
                 case 1: {
-                    var model = ConfigurationPrompts.ConfirmOrChangeModel(config.CurrentModel, "Vertex AI Auto-Extraktion", config.Model, newModel => {
-                        int idx = Array.IndexOf(config.Model, newModel);
-                        if (idx >= 0) config.CurrentModelIndex = idx;
-                        config.CurrentModel = newModel;
-                        ConfigLoader<VertexAutoExtractionConfig>.Save(config);
-                        ModelSyncService.SyncModelToRefinementConfig(newModel, isVertex: true);
-                    });
-                    if (model.IsBack) { step = 0; break; }
-                    if (!model.IsValue) return false;
-
-                    config.CurrentModel = model.Value!;
-                    config.CurrentModelIndex = Math.Max(0, Array.IndexOf(config.Model, config.CurrentModel));
-                    ModelSyncService.SyncModelToRefinementConfig(config.CurrentModel, isVertex: true);
-                    DirectoryTreeRenderer.DisplayFolderSummary(config.SourceFolder);
+                    var res = PromptModelStep(config, "Vertex AI Auto-Extraktion", isVertex: true);
+                    if (res == SetupStepResult.WentBack) { step = 0; break; }
+                    if (res == SetupStepResult.Aborted) return false;
                     step = 2;
                     break;
                 }

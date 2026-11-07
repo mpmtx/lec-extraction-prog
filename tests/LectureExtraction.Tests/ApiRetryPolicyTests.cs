@@ -267,6 +267,22 @@ public class ApiRetryPolicyTests : IDisposable {
         Assert.Empty(_waits);
     }
 
+    [Fact]
+    public async Task ExecuteWithRetryAsync_returns_null_on_user_cancellation_without_retrying() {
+        int attempts = 0;
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        string? result = await ApiRetryPolicy.ExecuteWithRetryAsync<string>(
+            () => { attempts++; throw new OperationCanceledException(cts.Token); },
+            maxRetries: 3,
+            cancellationToken: cts.Token);
+
+        Assert.Null(result);
+        Assert.Equal(1, attempts);
+        Assert.Empty(_waits);
+    }
+
     // The 429 a 392,711-token part got on 2026-10-15, as the SDK reported it.
     private const string PerMinuteTokenMessage =
         "You exceeded your current quota, please check your plan and billing details. Quota exceeded for metric: " +

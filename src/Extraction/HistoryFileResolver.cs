@@ -55,7 +55,7 @@ public static class HistoryFileResolver {
     /// Resolves an array of mixed file/directory paths into a distinct list of absolute file paths,
     /// filtering out non-montage pictures and other files marked with "ignored-" (or a legacy prefix).
     /// </summary>
-    public static List<string> ResolveHistoryFiles(string[] paths) {
+    public static List<string> ResolveHistoryFiles(string[] paths, string label = "Konfigurierter Pfad") {
         List<string> allHistoryFiles = [];
         if (paths == null) return allHistoryFiles;
 
@@ -70,7 +70,7 @@ public static class HistoryFileResolver {
                     .Select(f => Path.GetFullPath(f)));
             }
             else
-                Ui.Warn($"HistoryPreloadPath nicht gefunden (weder Datei noch Ordner): {path}");
+                Ui.Warn($"{label} nicht gefunden (weder Datei noch Ordner): {path}");
         }
         return [.. allHistoryFiles.Distinct(StringComparer.OrdinalIgnoreCase)];
     }

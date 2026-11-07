@@ -5,6 +5,8 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using LectureExtraction.ConsoleUi;
+using LectureExtraction.Infrastructure;
 
 namespace LectureExtraction.GoogleAi;
 
@@ -136,6 +138,7 @@ public static partial class ThoughtFile {
             return Read(path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+            Ui.Detail($"Gedankendatei kann nicht gelesen werden ({path}): {ex.Describe()}");
             return null;
         }
     }
@@ -150,7 +153,8 @@ public static partial class ThoughtFile {
         try {
             header = JsonSerializer.Deserialize<ThoughtFileHeader>(headerMatch.Groups["json"].Value, JsonOptions);
         }
-        catch (JsonException) {
+        catch (JsonException ex) {
+            Ui.Detail($"Gedankendatei-Header enthält ungültiges JSON ({path}): {ex.Describe()}");
             return null;
         }
         if (header == null) {
@@ -179,7 +183,8 @@ public static partial class ThoughtFile {
             try {
                 metadata = JsonSerializer.Deserialize<ThoughtRequestRecord>(match.Groups["json"].Value, JsonOptions);
             }
-            catch (JsonException) {
+            catch (JsonException ex) {
+                Ui.Warn($"Defekter Request-Eintrag in '{Path.GetFileName(path)}' übersprungen: {ex.Describe()}", "Thoughts");
                 continue;
             }
             if (metadata != null) {

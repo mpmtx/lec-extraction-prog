@@ -46,7 +46,10 @@ public sealed class AiStudioExtractionBackend(Client client, AiStudioAutoExtract
         string envName = !string.IsNullOrEmpty(extractedRefinementEnvName)
             ? extractedRefinementEnvName
             : "API_KEY-latex-refinement";
-        string refinementApiKey = GoogleAiClientBuilder.ResolveApiKeyByName(envName) ?? "no-key";
+        string? refinementApiKey = GoogleAiClientBuilder.ResolveApiKeyByName(envName);
+        if (string.IsNullOrEmpty(refinementApiKey)) {
+            throw new InvalidOperationException($"Der API-Key für das LaTeX-Refinement ('{envName}') ist nicht gesetzt.");
+        }
         return GoogleAiClientBuilder.BuildAiStudioClient(refinementApiKey);
     }
 }

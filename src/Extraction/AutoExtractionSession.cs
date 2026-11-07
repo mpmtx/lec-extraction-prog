@@ -31,7 +31,7 @@ namespace LectureExtraction.Extraction;
 /// - AutoExtractionSession.PrefixCache.cs (implicit prefix cache warming & history loading)
 /// Member Index:
 /// - StartAsync: Validates folders, prompts mode selection (batch, single, youtube), and begins execution.
-/// - SetupContextAndProcessAsync: Ensures system instructions/preamble are loaded then processes files.
+/// - RunAsync: Ensures session setup then processes files.
 /// - ProcessFilesAsync: Producer/consumer loop for MP4 video segment extraction.
 /// - ProcessYouTubeTasksAsync: YouTube video download and transcription pipeline.
 /// [Human] Die Hauptklasse für die automatisierte Verarbeitung eines ganzen Ordners voller Vorlesungsvideos,
@@ -112,10 +112,6 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
         + "\n";
 
     /// <summary>
-    /// [AI Context] Entry point that validates the source/target directories and checks filename formats.
-    /// [Human] Bereitet die Session vor: Prüft Ordner, warnt bei falschen Dateinamen (wichtig für die chronologische Sortierung) und lädt History/System-Prompt hoch.
-    /// </summary>
-    /// <summary>
     /// [AI Context] How recently a part's .tex must have been written for it to be reused instead
     /// of re-requested. Was a hardcoded 2 hours on <c>VideoProcessingState</c> with no way to reach
     /// it, which made it the most expensive invisible constant here: a batch retried after the
@@ -163,8 +159,8 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
     /// [Human] YouTube-Aufgaben ohne Menü ausführen.
     /// </summary>
     public async Task<bool> RunYouTubeAsync(IReadOnlyList<YouTubeTranscriptionTask> tasks) {
-        _config.TargetFolder = ExtractionHelpers.OutputRoot(_config);
-        Directory.CreateDirectory(_config.TargetFolder);
+        string targetFolder = ExtractionHelpers.OutputRoot(_config);
+        Directory.CreateDirectory(targetFolder);
 
         await _backend.CleanUpRemoteFilesAsync();
         try {
@@ -187,13 +183,9 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
             return false;
         }
 
-        // If no specific target folder is provided in config, create one inside the source folder.
-        if (string.IsNullOrWhiteSpace(_config.TargetFolder)) {
-            _config.TargetFolder = Path.Combine(_config.SourceFolder, "extracted_output");
-        }
-
-        if (!Directory.Exists(_config.TargetFolder)) {
-            Directory.CreateDirectory(_config.TargetFolder);
+        string targetFolder = ExtractionHelpers.OutputRoot(_config);
+        if (!Directory.Exists(targetFolder)) {
+            Directory.CreateDirectory(targetFolder);
         }
 
         if (_config.HighDemandDelaySeconds > 0) {
@@ -207,6 +199,10 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
         return true;
     }
 
+    /// <summary>
+    /// [AI Context] Entry point that validates the source/target directories and checks filename formats.
+    /// [Human] Bereitet die Session vor: Prüft Ordner, warnt bei falschen Dateinamen (wichtig für die chronologische Sortierung) und lädt History/System-Prompt hoch.
+    /// </summary>
     public async Task StartAsync() {
         if (!PrepareWorkspace()) {
             return;
@@ -214,7 +210,7 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
 
         Ui.Step($"Automatisierte Extraktion ({_backend.Name})");
         Ui.Detail($"Quelle (Source): {_config.SourceFolder}");
-        Ui.Detail($"Ziel (Target):   {_config.TargetFolder}");
+        Ui.Detail($"Ziel (Target):   {ExtractionHelpers.OutputRoot(_config)}");
         _backend.DescribeEndpoint();
 
         string[] videoFilesToProcess = ExtractionHelpers.DeduplicatePreferCompressed(Directory.GetFiles(_config.SourceFolder, "*.mp4")).ToArray();
@@ -241,7 +237,7 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
                 case ExtractionMode.SingleVideo: {
                     var files = FileSelectionPrompt.SelectSingleFile(_config.SourceFolder);
                     if (files.Length > 0) {
-                        await SetupContextAndProcessAsync(files);
+                        await RunAsync(files);
                         return;
                     }
                     break;
@@ -260,7 +256,7 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
                 default: {
                     var files = VideoBatchSelector.SelectAndFilterVideosForBatch(_config.SourceFolder);
                     if (files.Length > 0) {
-                        await SetupContextAndProcessAsync(files);
+                        await RunAsync(files);
                         return;
                     }
                     break;
@@ -271,21 +267,13 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
 
     private enum ExtractionMode { AllVideos, SingleVideo, YouTube }
 
-    /// <summary>
-    /// [AI Context] Core initialization routine before batch processing. Loads system instructions and pre-warms the model context with attachments.
-    /// [Human] Lädt die System-Instruktionen und die Historie hoch, bevor die eigentliche Video-Verarbeitung startet.
-    /// </summary>
-    private async Task SetupContextAndProcessAsync(string[] files) => await RunAsync(files);
-
     public async Task<bool> EnsureSessionSetupAsync() {
-        // --- Phase 1: Load System Instruction text from disk (if not already loaded) ---
+        // --- Phase 1: Load System Instruction text (and the history) from disk (if not already loaded) ---
         if (string.IsNullOrEmpty(_systemInstructionText)) {
             if (!await TryLoadSystemInstructionWithHistoryAsync()) return false;
         }
 
-        // --- Phase 2: Removed. History is always loaded via Phase 1 now (TryLoadSystemInstructionWithHistoryAsync) ---
-
-        // --- Phase 3: Finalize session setup (logging, debug roundtrip) ---
+        // --- Phase 2: Finalize session setup (logging, debug roundtrip) ---
         InteractiveDelay.LastGenerationCompletionTimeUtc = DateTime.UtcNow;
         _sessionLogger.SetSessionMetadata(!string.IsNullOrEmpty(_systemInstructionText), _historyWasLoaded);
         _sessionLogger.InitializeSession();
@@ -337,7 +325,7 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
         if (_config.SystemInstructionPaths == null || _config.SystemInstructionPaths.Length == 0) return true;
 
         Ui.Info("Folgende System Instruction-Dateien sind konfiguriert:");
-        var resolvedInstructionFiles = HistoryFileResolver.ResolveHistoryFiles(_config.SystemInstructionPaths);
+        var resolvedInstructionFiles = HistoryFileResolver.ResolveHistoryFiles(_config.SystemInstructionPaths, "SystemInstructionPath");
 
         if (resolvedInstructionFiles.Count == 0) {
             Ui.Warn("Keine System Instruction-Dateien gefunden oder konfiguriert.");
@@ -350,7 +338,7 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
         List<string> historyFilesForSystemInstruction = [];
         bool shouldLoadHistory = !_historyWasLoaded;
         if (shouldLoadHistory) {
-            historyFilesForSystemInstruction = HistoryFileResolver.ResolveHistoryFiles(_config.HistoryPreloadPaths);
+            historyFilesForSystemInstruction = HistoryFileResolver.ResolveHistoryFiles(_config.HistoryPreloadPaths, "HistoryPreloadPath");
             if (historyFilesForSystemInstruction.Count > 0) {
                 Ui.Info("Folgende Dateien sind als History konfiguriert:");
                 FileTreeRenderer.PrintFileTree(historyFilesForSystemInstruction, _config.VerboseConsoleOutput);
@@ -497,7 +485,7 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
     /// </returns>
     private async Task<bool> ProcessFilesAsync(string[] videoFilesToProcess) {
         // Chronologisch aufsteigend sortieren anhand des Dateinamens und der Woche
-        videoFilesToProcess = [.. videoFilesToProcess.OrderBy(videoFile => VideoDateParser.Parse(videoFile).Date).ThenBy(videoFile => VideoDateParser.Parse(videoFile).WeekNumber ?? int.MaxValue).ThenBy(videoFile => videoFile)];
+        videoFilesToProcess = [.. videoFilesToProcess.OrderChronologically()];
 
         // [AI Context] We use a bounded channel (capacity 1) to synchronize the FFmpeg Producer task and the Gemini Consumer task.
         // This allows FFmpeg to prepare the *next* video while Gemini is waiting for the API to process the *current* video, maximizing throughput.
@@ -506,19 +494,35 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
         var preparedVideoQueue = Channel.CreateBounded<PreparedVideo>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.Wait });
 
         // 1. PRODUCER: FFmpeg läuft unsichtbar in einem eigenen Hintergrund-Task
-        var videoPreparationTask = Task.Run(() => VideoSegmentProducer.RunAsync(videoFilesToProcess, preparedVideoQueue.Writer, _config));
+        using var producerCancellation = new CancellationTokenSource();
+        var videoPreparationTask = Task.Run(() => VideoSegmentProducer.RunAsync(videoFilesToProcess, preparedVideoQueue.Writer, _config, producerCancellation.Token));
 
         // 2. CONSUMER: Unser Haupt-Thread schnappt sich die Videos vom Fließband, sobald sie da sind
         // [AI Context] Awaits tasks from the bounded channel. This guarantees Gemini processes chunks strictly sequentially while FFmpeg works ahead.
         bool anyVideoFailed = false;
 
-        await foreach (var (file, fileSpecificOutputFolder, _, partsWithTimes, _, fullOriginalVideoDuration) in preparedVideoQueue.Reader.ReadAllAsync()) {
-            bool success = await ProcessPreparedVideoAsync(file, fileSpecificOutputFolder, partsWithTimes, fullOriginalVideoDuration);
-            if (!success) anyVideoFailed = true;
+        try {
+            await foreach (var (file, fileSpecificOutputFolder, _, partsWithTimes, _, fullOriginalVideoDuration) in preparedVideoQueue.Reader.ReadAllAsync()) {
+                bool success = await ProcessPreparedVideoAsync(file, fileSpecificOutputFolder, partsWithTimes, fullOriginalVideoDuration);
+                if (!success) anyVideoFailed = true;
+            }
         }
-
-        // Warten, bis der Producer-Task sauber beendet wurde (fängt Fehler ab)
-        await videoPreparationTask;
+        finally {
+            // [AI Context] A consumer that threw leaves the producer blocked on the full channel; cancelling
+            // releases it. After a normal drain the producer has already finished and this is a no-op.
+            producerCancellation.Cancel();
+            try {
+                // Warten, bis der Producer-Task sauber beendet wurde (fängt Fehler ab)
+                await videoPreparationTask;
+            }
+            catch (OperationCanceledException ex) when (producerCancellation.IsCancellationRequested) {
+                Ui.Detail($"FFmpeg-Producer nach Abbruch des Verbrauchers gestoppt: {ex.Describe()}", "FFmpeg Producer");
+            }
+            catch (Exception ex) {
+                Ui.Error($"FFmpeg-Producer fehlgeschlagen; die restlichen Videos wurden nicht vorbereitet: {ex.Describe()}", "FFmpeg Producer");
+                anyVideoFailed = true;
+            }
+        }
 
         if (anyVideoFailed) {
             Ui.Warn("Batch-Verarbeitung mit Fehlern abgeschlossen (einige Dateien wurden abgebrochen).", "AutoExtraction");
@@ -551,8 +555,10 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
         Ui.Step($"[Gemini Consumer] Starte API-Extraktion für {Path.GetFileName(file)}");
 
         // Handle Audio File Generation
+        var (refinementClient, refinementConfig) = PrepareRefinementConfig();
         var state = new VideoProcessingState(ComputeBaseName(file), new AudioTrackExtractor(file, fileSpecificOutputFolder)) {
-            RefinementClient = ResolveRefinementClientAndConfigureParams()
+            RefinementClient = refinementClient,
+            RefinementConfig = refinementConfig
         };
 
         await TranscribeSegmentsAsync(state, file, fileSpecificOutputFolder, partsWithTimes, fullOriginalVideoDuration);
@@ -577,26 +583,31 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
     /// [AI Context] Initializes refinementClient early because the parallel audio upload task
     /// (pendingAudioUploadTask) needs to upload the audio to the EXACT SAME Google Cloud Project / API Key
     /// that LatexRefinementSession will use. Otherwise, LatexRefinementSession gets a ClientError: "You do
-    /// not have permission to access the File". Also applies UseChosenModelForRestOfPipeline's parameter
-    /// override onto the refinement steps as a side effect, same as before the Phase 4.5 split.
-    /// [Human] Löst den Client für das Refinement auf und übernimmt bei Bedarf die gewählten Modell-Parameter.
+    /// not have permission to access the File". Clones the refinement config so runtime overrides (disabling
+    /// step 1 for single-part videos or applying extraction model parameters) never mutate the loaded configuration.
+    /// [Human] Löst den Client für das Refinement auf und übernimmt bei Bedarf die gewählten Modell-Parameter auf einer Kopie der Konfiguration.
     /// </summary>
-    private Client? ResolveRefinementClientAndConfigureParams() {
-        if (!_config.GoIntoLatexRefinement) return null;
+    private (Client? Client, LatexRefinementSessionConfig? Config) PrepareRefinementConfig() {
+        if (!_config.GoIntoLatexRefinement) return (null, null);
 
-        if (_latexRefinementConfig != null) {
-            bool useVertex = _backend.RefinementUsesVertex;
-            _latexRefinementConfig.UseVertex = useVertex;
-            if (!_config.NumberOfParts.IsAuto && (int)_config.NumberOfParts <= 1 && _latexRefinementConfig.Step1MergeAndTimestamp != null) {
-                Ui.Info($"NumberOfParts = {_config.NumberOfParts} (<= 1). Deaktiviere Schritt 1 (Merger) für die LatexRefinementSession.", "AutoExtraction");
-                _latexRefinementConfig.Step1MergeAndTimestamp.Enabled = false;
-            }
-            if (_config.UseChosenModelForRestOfPipeline) {
-                Ui.Info($"UseChosenModelForRestOfPipeline = true. Übernehme Modell '{_config.CurrentModel}' und Parameter im Arbeitsspeicher für das Refinement...", "AutoExtraction");
-                ApplyChosenModelToRefinement(_latexRefinementConfig, _config, useVertex);
-            }
+        var copy = _latexRefinementConfig.Clone();
+        bool useVertex = _backend.RefinementUsesVertex;
+        copy.UseVertex = useVertex;
+        if (!_config.NumberOfParts.IsAuto && (int)_config.NumberOfParts <= 1 && copy.Step1MergeAndTimestamp != null) {
+            Ui.Info($"NumberOfParts = {_config.NumberOfParts} (<= 1). Deaktiviere Schritt 1 (Merger) für die LatexRefinementSession.", "AutoExtraction");
+            copy.Step1MergeAndTimestamp.Enabled = false;
         }
-        return _backend.CreateRefinementClient(_latexRefinementConfig!);
+        if (_config.UseChosenModelForRestOfPipeline) {
+            Ui.Info($"UseChosenModelForRestOfPipeline = true. Übernehme Modell '{_config.CurrentModel}' und Parameter im Arbeitsspeicher für das Refinement...", "AutoExtraction");
+            ApplyChosenModelToRefinement(copy, _config, useVertex);
+        }
+        try {
+            return (_backend.CreateRefinementClient(copy), copy);
+        }
+        catch (InvalidOperationException ex) {
+            Ui.Warn($"Refinement-Client konnte nicht erstellt werden: {ex.Describe()}. Das anschließende Refinement wird übersprungen.", "AutoExtraction");
+            return (null, null);
+        }
     }
 
     /// <summary>
@@ -630,8 +641,8 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
         public readonly string BaseName = baseName;
         public readonly AudioTrackExtractor AudioTrackExtractor = audioTrackExtractor;
         public readonly List<string> GeneratedTexFiles = [];
-        public string FullOutputTextRaw = ""; // Stores text as is, no timestamp adjustment
-        public string FullOutputTextOffsetted = ""; // Stores text with timestamps adjusted by partStartTimeSeconds
+        public readonly System.Text.StringBuilder FullOutputTextRaw = new(); // Stores text as is, no timestamp adjustment
+        public readonly System.Text.StringBuilder FullOutputTextOffsetted = new(); // Stores text with timestamps adjusted by partStartTimeSeconds
         public TokenUsage FileTotalTokens;
         public readonly List<string> PartSummaries = []; // one line per part, for the combined header
         public bool FileProcessingSuccess = true;
@@ -639,6 +650,7 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
         public Task<SegmentUpload>? PendingVideoUploadTask;
         public Task<List<Part>>? PendingAudioUploadTask;
         public Client? RefinementClient;
+        public LatexRefinementSessionConfig? RefinementConfig;
     }
 
     /// <summary>
@@ -667,9 +679,9 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
                 string cachedSummary = TexDocumentWriter.SummarizePartHeader(cachedHeader);
                 state.PartSummaries.Add(cachedSummary.Length > 0 ? $"{cachedSummary} | aus Cache" : "aus Cache");
                 string cachedSeparator = TexDocumentWriter.BuildPartSeparator(i + 1, cachedHeader, fromCache: true);
-                state.FullOutputTextRaw += cachedSeparator + cachedBody; // For raw output
+                state.FullOutputTextRaw.Append(cachedSeparator).Append(cachedBody); // For raw output
                 if (_config.GenerateOffsetFiles) {
-                    state.FullOutputTextOffsetted += cachedSeparator + LatexTimestampAdjuster.AdjustTimestamps(cachedBody, partStartTimeSeconds); // For offsetted output
+                    state.FullOutputTextOffsetted.Append(cachedSeparator).Append(LatexTimestampAdjuster.AdjustTimestamps(cachedBody, partStartTimeSeconds)); // For offsetted output
                 }
                 state.AudioTrackExtractor.EnsureStarted(_config.GenerateAudioFile);
                 continue;
@@ -739,9 +751,7 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
                         if (state.AudioTrackExtractor.PendingTask != null) {
                             await state.AudioTrackExtractor.PendingTask;
                         }
-                        var aacFiles = Directory.GetFiles(fileSpecificOutputFolder, "*.aac");
-                        string audioPath = aacFiles.OrderByDescending(aacFile => System.IO.File.GetLastWriteTime(aacFile)).FirstOrDefault()
-                                           ?? Path.Combine(fileSpecificOutputFolder, Path.GetFileNameWithoutExtension(file) + "_audio.aac");
+                        string audioPath = FindAudioFile(fileSpecificOutputFolder, file);
                         if (System.IO.File.Exists(audioPath)) {
                             Ui.Info($"Starte parallelen Audio-Upload für LaTeX Refinement im Hintergrund ({Path.GetFileName(audioPath)})...", "Pre-Upload");
                             var handler = _backend.CreateAudioUploader(state.RefinementClient, fileSpecificOutputFolder);
@@ -782,9 +792,9 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
                 state.PartSummaries.Add(TexDocumentWriter.SummarizePartHeader(partHeader));
 
                 string partSeparator = TexDocumentWriter.BuildPartSeparator(i + 1, partHeader, fromCache: false);
-                state.FullOutputTextRaw += partSeparator + cleanTex;
+                state.FullOutputTextRaw.Append(partSeparator).Append(cleanTex);
                 if (_config.GenerateOffsetFiles) {
-                    state.FullOutputTextOffsetted += partSeparator + LatexTimestampAdjuster.AdjustTimestamps(cleanTex, partStartTimeSeconds);
+                    state.FullOutputTextOffsetted.Append(partSeparator).Append(LatexTimestampAdjuster.AdjustTimestamps(cleanTex, partStartTimeSeconds));
                 }
 
                 string uniqueTargetPartPath = ExtractionHelpers.ResolveNonClashingTexPath(targetPartPath);
@@ -806,6 +816,25 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
                 break;
             }
         }
+
+        await ObserveAbandonedPreUploadAsync(state);
+    }
+
+    /// <summary>
+    /// [AI Context] A part that failed ends the loop while the next part's pre-upload may still run.
+    /// Awaiting it surfaces its failure (it would otherwise be an unobserved task) and lets it finish
+    /// before the session's remote cleanup, so the file it uploads is deleted with the rest.
+    /// [Human] Wartet auf einen nicht mehr benötigten Vorab-Upload, damit Fehler sichtbar werden.
+    /// </summary>
+    private static async Task ObserveAbandonedPreUploadAsync(VideoProcessingState state) {
+        if (state.PendingVideoUploadTask is not { } abandoned) return;
+        state.PendingVideoUploadTask = null;
+        try {
+            await abandoned;
+        }
+        catch (Exception ex) {
+            Ui.Warn($"Nicht mehr benötigter Vorab-Upload fehlgeschlagen: {ex.Describe()}", "Pre-Upload");
+        }
     }
 
     /// <returns>The refinement's result: false if one of its steps failed. true when it succeeded or
@@ -824,14 +853,14 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
             partSummaries: state.PartSummaries);
 
         string uniqueTargetFilePath = ExtractionHelpers.ResolveNonClashingTexPath(targetFilePath);
-        await System.IO.File.WriteAllTextAsync(uniqueTargetFilePath, Header(uniqueTargetFilePath) + state.FullOutputTextRaw);
+        await System.IO.File.WriteAllTextAsync(uniqueTargetFilePath, Header(uniqueTargetFilePath) + state.FullOutputTextRaw.ToString());
         Ui.Success($"Fertig mit {Path.GetFileName(file)}. Das komplette Dokument liegt hier: {uniqueTargetFilePath}", "AutoExtraction");
 
         string refinementTargetFile = uniqueTargetFilePath;
 
         if (_config.GenerateOffsetFiles) {
             string uniqueTargetFilePathOffset = ExtractionHelpers.ResolveNonClashingTexPath(targetFilePathOffset);
-            await System.IO.File.WriteAllTextAsync(uniqueTargetFilePathOffset, Header(uniqueTargetFilePathOffset) + state.FullOutputTextOffsetted);
+            await System.IO.File.WriteAllTextAsync(uniqueTargetFilePathOffset, Header(uniqueTargetFilePathOffset) + state.FullOutputTextOffsetted.ToString());
             Ui.Success($"Fertig mit {Path.GetFileName(file)}. Das offset-korrigierte Dokument liegt hier: {uniqueTargetFilePathOffset}", "AutoExtraction");
             refinementTargetFile = uniqueTargetFilePathOffset;
         }
@@ -847,41 +876,44 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
             preUploadedAudioParts = await state.PendingAudioUploadTask;
         }
 
-        var aacFiles = Directory.GetFiles(fileSpecificOutputFolder, "*.aac");
-        string audioFilePath = aacFiles.OrderByDescending(aacFile => System.IO.File.GetLastWriteTime(aacFile)).FirstOrDefault()
-                               ?? Path.Combine(fileSpecificOutputFolder, Path.GetFileNameWithoutExtension(file) + "_audio.aac");
+        string audioFilePath = FindAudioFile(fileSpecificOutputFolder, file);
 
         Ui.Step($"Starte automatischen Refinement-Prozess für die {(_config.GenerateOffsetFiles ? "offset-korrigierte " : "")}Datei...");
         var refinementSession = new LatexRefinementSession(
             state.RefinementClient ?? _client,
-            RefinementOptions.ForFile(_latexRefinementConfig!, refinementTargetFile, _config, audioFilePath, preUploadedAudioParts));
+            RefinementOptions.ForFile(state.RefinementConfig ?? _latexRefinementConfig, refinementTargetFile, _config, audioFilePath, preUploadedAudioParts));
 
         AttachmentUploader.HasJustUploaded = false;
         return await refinementSession.StartAsync();
     }
 
-    public async Task<bool> RefineYouTubeOutputAsync(string combinedTexPath, int totalParts) {
-        if (!_config.GoIntoLatexRefinement || _latexRefinementConfig == null) return true;
+    /// <summary>
+    /// [AI Context] The audio track the refinement reads: the newest .aac in the video's output folder,
+    /// else the name AudioTrackExtractor would give it (which may not exist yet).
+    /// [Human] Die Audiodatei für das Refinement: die neueste .aac im Ausgabeordner.
+    /// </summary>
+    private static string FindAudioFile(string fileSpecificOutputFolder, string videoFile) =>
+        Directory.GetFiles(fileSpecificOutputFolder, "*.aac").OrderByDescending(aacFile => System.IO.File.GetLastWriteTime(aacFile)).FirstOrDefault()
+        ?? Path.Combine(fileSpecificOutputFolder, Path.GetFileNameWithoutExtension(videoFile) + "_audio.aac");
 
-        var refinementClient = ResolveRefinementClientAndConfigureParams();
-        if (totalParts <= 1 && _latexRefinementConfig.Step1MergeAndTimestamp != null) {
+    public async Task<bool> RefineYouTubeOutputAsync(string combinedTexPath, int totalParts) {
+        if (!_config.GoIntoLatexRefinement) return true;
+
+        var (refinementClient, refinementConfig) = PrepareRefinementConfig();
+        var targetConfig = refinementConfig ?? _latexRefinementConfig;
+        if (totalParts <= 1 && targetConfig.Step1MergeAndTimestamp != null) {
             Ui.Info($"YouTube-Video hat {totalParts} Teil (<= 1). Überspringe Schritt 1 (Merge) und führe Speech Refinement + Last Refinement aus.", "YouTube Mode");
+            targetConfig.Step1MergeAndTimestamp.Enabled = false;
         }
 
         Ui.Step("Starte automatischen Refinement-Prozess für die YouTube-Transkription...", "YouTube Mode");
         var refinementSession = new LatexRefinementSession(
             refinementClient ?? _client,
-            RefinementOptions.ForFile(_latexRefinementConfig, combinedTexPath, _config));
+            RefinementOptions.ForFile(targetConfig, combinedTexPath, _config));
 
         AttachmentUploader.HasJustUploaded = false;
         return await refinementSession.StartAsync();
     }
-
-    [System.Text.RegularExpressions.GeneratedRegex(@"-speed-[\d\.]+-compressed$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
-    private static partial System.Text.RegularExpressions.Regex SpeedCompressedRegex();
-
-    [System.Text.RegularExpressions.GeneratedRegex(@"-compressed$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
-    private static partial System.Text.RegularExpressions.Regex CompressedRegex();
 
     [System.Text.RegularExpressions.GeneratedRegex(@"\[(?:SYSTEM|AI-MODEL)\][^\r\n]*Segment\s*complete", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
     private static partial System.Text.RegularExpressions.Regex SegmentCompleteRegex();

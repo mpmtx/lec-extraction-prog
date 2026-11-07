@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using System.Linq;
+using LectureExtraction.ConsoleUi;
+using LectureExtraction.Infrastructure;
 
 namespace LectureExtraction.Extraction;
 
@@ -107,8 +109,10 @@ public sealed partial record LectureProgress(
             try {
                 tmpBytes = new DirectoryInfo(tmp).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
             }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+                // Only the tmp size in the status line is lost; say so instead of showing 0 silently.
+                Ui.Detail($"Größe von '{tmp}' nicht ermittelbar: {ex.Describe()}", "Status");
+            }
         }
 
         return new LectureProgress(

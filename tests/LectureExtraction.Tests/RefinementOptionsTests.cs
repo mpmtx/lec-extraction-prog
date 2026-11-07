@@ -50,6 +50,23 @@ public class RefinementOptionsTests {
     }
 
     [Fact]
+    public void LatexRefinementSessionConfig_Clone_produces_independent_deep_copy() {
+        var original = new LatexRefinementSessionConfig {
+            UseVertex = false,
+            Step1MergeAndTimestamp = new RefinementStepConfig { Enabled = true }
+        };
+
+        var clone = original.Clone();
+        clone.UseVertex = true;
+        clone.Step1MergeAndTimestamp.Enabled = false;
+
+        Assert.False(original.UseVertex);
+        Assert.True(original.Step1MergeAndTimestamp.Enabled);
+        Assert.True(clone.UseVertex);
+        Assert.False(clone.Step1MergeAndTimestamp.Enabled);
+    }
+
+    [Fact]
     public void ForFile_without_extraction_config_matches_the_three_argument_constructor() {
         var state = StateOf(RefinementOptions.ForFile(new LatexRefinementSessionConfig(), "lecture.tex"));
 

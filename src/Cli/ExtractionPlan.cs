@@ -31,7 +31,8 @@ public sealed record ExtractionPlan(
     bool RefinementFollows,
     double ResumeWindowHours,
     IReadOnlyList<PlannedVideo> Videos,
-    double? GoogleVideoFps = null) {
+    double? GoogleVideoFps = null,
+    IReadOnlyList<string>? MissingPromptPaths = null) {
 
     public int VideoCount => Videos.Count;
 
@@ -66,6 +67,11 @@ public sealed record ExtractionPlan(
                     $"{group.Count()} videos share the output folder '{Path.GetFileName(group.Key)}' "
                     + $"({string.Join(", ", group.Select(video => video.FileName))}) - "
                     + "they will overwrite and re-read each other's parts. Select one variant."));
+
+            if (MissingPromptPaths is { Count: > 0 }) {
+                warnings.AddRange(MissingPromptPaths.Select(path =>
+                    $"Configured prompt path does not exist: '{path}'"));
+            }
 
             return warnings;
         }
@@ -111,13 +117,27 @@ public static class ExtractionPlanner {
             : config.TargetFolder;
 
         var planned = videos
-            .OrderBy(video => VideoDateParser.Parse(video).Date)
-            .ThenBy(video => VideoDateParser.Parse(video).WeekNumber ?? int.MaxValue)
-            .ThenBy(video => video)
+            .OrderChronologically()
             .Select(video => Describe(video, config, targetFolder, resumeWindowHours, force, durations))
             .ToList();
 
         string envName = ApiKeyProfileResolver.Resolve(config.ActiveApiProfile, config.AiStudioApiKeyEnvNames);
+
+        List<string> missingPromptPaths = [];
+        if (config.SystemInstructionPaths != null) {
+            foreach (var path in config.SystemInstructionPaths) {
+                if (!string.IsNullOrWhiteSpace(path) && !File.Exists(path) && !Directory.Exists(path)) {
+                    missingPromptPaths.Add(path);
+                }
+            }
+        }
+        if (config.HistoryPreloadPaths != null) {
+            foreach (var path in config.HistoryPreloadPaths) {
+                if (!string.IsNullOrWhiteSpace(path) && !File.Exists(path) && !Directory.Exists(path)) {
+                    missingPromptPaths.Add(path);
+                }
+            }
+        }
 
         return new ExtractionPlan(
             Backend: "aistudio",
@@ -135,7 +155,8 @@ public static class ExtractionPlanner {
             RefinementFollows: config.GoIntoLatexRefinement,
             ResumeWindowHours: resumeWindowHours,
             Videos: planned,
-            GoogleVideoFps: config.GoogleVideoFps);
+            GoogleVideoFps: config.GoogleVideoFps,
+            MissingPromptPaths: missingPromptPaths);
     }
 
     private static PlannedVideo Describe(
