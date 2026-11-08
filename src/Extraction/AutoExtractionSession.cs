@@ -467,7 +467,7 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
         if (partNumber != 1) {
             s += "<parameter name=\"segment_start\">\n" +
                  "1. Start the transcription EXACTLY where the audio begins in this specific video segment, even if it is mid-sentence. Do not attempt to reconstruct the beginning of the sentence from the previous context, and do not perform any overlap correction.\n" +
-                 "2. If the previous part ended in the middle of an environment (like a `proofWrapper`, `proof`, or `content`), you MUST logically continue that environment in this part (e.g., start with `\\begin{proofWrapper}` or `\\begin{content}` if the professor is still doing the proof/derivation). However, you must still transcribe the spoken words exactly from where this new video segment begins.\n" +
+                 "2. Open this part as the System Instructions prescribe for a Part 2 or later: find the spot where this video begins in the previous part by its speech (it lies in the overlap, before that part's end), re-open the headings and any proof still open there, never a `content` block, and put the board leftovers into the `Initial Board State Leftovers` aiNote. However, you must still transcribe the spoken words exactly from where this new video segment begins.\n" +
                  "</parameter>\n";
         }
         return s;

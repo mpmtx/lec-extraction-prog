@@ -140,16 +140,17 @@ public sealed class YouTubeTaskRunner(IAutoExtractionConfig config, IYouTubeTran
     }
 
     /// <summary>
-    /// [AI Context] Builds the per-fragment instruction. Part 1 is told the lecture date matters;
-    /// later parts are told it matters less but should still be stated - the model otherwise either
-    /// omits the date entirely or repeats a full date header on every part. When totalParts == 1,
-    /// explicitly instructs the model to omit the trailing Final Video Cut-off &amp; Board State Checkpoint aiNote.
-    /// [Human] Baut die Anweisung für ein Fragment. Teil 1 betont das Datum, spätere Teile nicht.
+    /// [AI Context] Builds the per-fragment instruction. A YouTube task carries no date, so part 1 is
+    /// told to date its <c>\youtubechapter</c> only from the video and never to guess; later parts are
+    /// told not to repeat the chapter heading or the date, because a Part 2 or later opens no chapter
+    /// (Stage 1, transcription-multi-part.md). When totalParts == 1, explicitly instructs the model to
+    /// omit the trailing Final Video Cut-off &amp; Board State Checkpoint aiNote.
+    /// [Human] Baut die Anweisung für ein Fragment. Teil 1: Datum nur aus dem Video, nie raten; spätere Teile: kein Datum.
     /// </summary>
     public static string BuildFragmentPrompt(YouTubeTimestampFragment frag, int partNum, int totalParts = 0) {
         string dateNotice = (partNum == 1)
-            ? "Please note that since this is part 1 of the lecture, the date of the transcription is important."
-            : $"The lecture took place... Please note that since this is part {partNum} of the lecture, the date is not so important (but tell it anyway).";
+            ? "This request gives no date: write `\\youtubechapter` with a `[Date]` only if the video states the date, and never guess one."
+            : $"Since this is part {partNum}, do not repeat the `\\youtubechapter` heading or the date.";
 
         string singlePartNotice = (totalParts == 1)
             ? "\nSince this is a complete single-part video (Part 1 of 1), do NOT emit a trailing `\\begin{aiNote}[Final Video Cut-off \\& Board State Checkpoint]` at the end of the document."

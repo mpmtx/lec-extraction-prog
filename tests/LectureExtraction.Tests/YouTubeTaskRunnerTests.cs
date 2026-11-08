@@ -28,20 +28,23 @@ public class YouTubeTaskRunnerTests {
     }
 
     [Fact]
-    public void FirstPart_IsToldTheDateMatters() {
+    public void FirstPart_DatesTheChapterOnlyFromTheVideo() {
         string prompt = YouTubeTaskRunner.BuildFragmentPrompt(Fragment(), partNum: 1);
 
-        Assert.Contains("part 1 of the lecture, the date of the transcription is important", prompt);
+        // A YouTube task carries no date. The old text called the date important without giving one,
+        // which invites a guess; Stage 1 omits [Date] from \youtubechapter when it is unknown.
+        Assert.Contains("never guess", prompt);
+        Assert.DoesNotContain("date of the transcription is important", prompt);
     }
 
     [Fact]
-    public void LaterParts_AreToldTheDateMattersLessButStillStateIt() {
+    public void LaterParts_RepeatNeitherTheChapterNorTheDate() {
         string prompt = YouTubeTaskRunner.BuildFragmentPrompt(Fragment(), partNum: 3);
 
-        // Without the "(but tell it anyway)" half the model omits the date entirely on later parts;
-        // without the "not so important" half it repeats a full date header on every part.
-        Assert.Contains("not so important", prompt);
-        Assert.Contains("but tell it anyway", prompt);
+        // A Part 2 or later opens no chapter in Stage 1, so there is no place for the date; the old
+        // "(but tell it anyway)" asked for one anyway.
+        Assert.Contains("do not repeat the `\\youtubechapter` heading or the date", prompt);
+        Assert.DoesNotContain("tell it anyway", prompt);
     }
 
     [Fact]

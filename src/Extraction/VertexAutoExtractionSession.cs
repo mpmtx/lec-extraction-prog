@@ -373,11 +373,7 @@ public partial class VertexAutoExtractionSession(Client client, VertexAutoExtrac
                     int partNum = i + 1;
                     Ui.Step($"Verarbeite Fragment {partNum}/{task.Fragments.Count}: {frag.StartTime} bis {frag.EndTime} ({frag.PartTitle})");
 
-                    string dateNotice = (partNum == 1)
-                        ? "Please note that since this is part 1 of the lecture, the date of the transcription is important."
-                        : $"The lecture took place... Please note that since this is part {partNum} of the lecture, the date is not so important (but tell it anyway).";
-
-                    string parsedPrompt = $"Please transcribe this lecture and extract all mathematical formulas into LaTeX according to the system instructions.\n\n[IMPORTANT INSTRUCTION FOR YOUTUBE VIDEO]:\nThis is part {partNum} ('{frag.PartTitle}') of the lecture. Please focus ONLY on transcribing and extracting the chosen video fragment starting at timestamp {frag.StartTime} and ending at timestamp {frag.EndTime}.\n{dateNotice}";
+                    string parsedPrompt = YouTubeTaskRunner.BuildFragmentPrompt(frag, partNum, task.Fragments.Count);
 
                     var attachmentParts = new List<Part> {
                         Part.FromUri(task.VideoUrl, "video/mp4")
