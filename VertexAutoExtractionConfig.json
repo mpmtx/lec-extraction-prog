@@ -10,38 +10,6 @@
     "D:\\lecture-videos\\d-und-a"
   ],
   "TargetFolder": "",
-  "SystemInstructionPaths": [
-    /* Stating directory folders (e.g. "...\\environments") is supported; files can also be listed individually for deterministic order. */
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\transcription.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\environments.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\environments\\environments-syntax-rules.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\environments\\environments-theorem-family.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\environments\\environments-speech.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\environments\\environments-inlinemetanote.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\environments\\environments-content.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\environments\\environments-tikz.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\environments\\environments-pedagogical-boxes.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\environments\\environments-proof-wrappers.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\environments\\environments-document-structure.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\environments\\environments-invisible-layer.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\big-examples.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\big-examples\\big-examples-document-conventions.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\big-examples\\big-examples-document-hierarchy.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\big-examples\\big-examples-environment-usage.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\big-examples\\big-examples-speech-structuring.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\big-examples\\big-examples-proof-structuring.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\big-examples\\big-examples-formula-formatting.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\big-examples\\big-examples-typography-notation.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\big-examples\\big-examples-list-enumeration.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\big-examples\\big-examples-example-scenarios.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\big-examples\\big-examples-anti-patterns.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\big-examples\\big-examples-audio-fidelity.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\big-examples\\big-examples-fallback-strategy.md",
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\big-examples\\big-examples-compilation-errors.md"
-  ],
-  "HistoryPreloadPaths": [
-    "C:\\Users\\miche\\latex\\prompt-engineering\\transcription\\training-history"
-  ],
   "LogFolder": "C:\\Users\\miche\\gemini-logs",
   "Model": [
     "gemini-3.8-flash",

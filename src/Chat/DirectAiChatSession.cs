@@ -484,9 +484,8 @@ public class DirectAiChatSession {
                 }
             }
             else if (Directory.Exists(path)) {
-                allHistoryFiles.AddRange(Directory.GetFiles(path, "*.*", SearchOption.AllDirectories)
-                    .Where(f => !Extraction.HistoryFileResolver.IsDeletedPromptFile(f))
-                    .Select(f => Path.GetFullPath(f)));
+                // Folders are never expanded: only files named one by one are loaded, in their order.
+                Ui.Warn($"History-Pfad ist ein Ordner und wird nicht geladen (nur einzeln genannte Dateien): {path}", "Setup");
             }
             else {
                 notFoundPaths.Add(path);

@@ -177,13 +177,14 @@ public partial class VertexAutoExtractionSession(Client client, VertexAutoExtrac
     private async Task<bool> EnsureSessionSetupAsync() {
         if (string.IsNullOrEmpty(_systemInstructionText)) {
             if (_config.SystemInstructionPaths != null && _config.SystemInstructionPaths.Length != 0) {
-                Ui.Detail("Folgende System Instruction-Dateien sind konfiguriert:");
+                Ui.Detail("Folgende System Instruction-Dateien sind eingetragen (Stage1PromptFiles):");
 
-                // Resolve all files from configured paths, handling directories
+                // The compiled-in file list, in its order; folders are never expanded
                 var resolvedInstructionFiles = HistoryFileResolver.ResolveHistoryFiles(_config.SystemInstructionPaths);
 
                 if (resolvedInstructionFiles.Count > 0) {
                     FileTreeRenderer.PrintFileTree(resolvedInstructionFiles, _config.VerboseConsoleOutput);
+                    Stage1PromptFiles.WarnAboutUnlistedFiles();
                     List<string> distinctHistoryFiles = [];
                     if (_config.LoadHistoryIntoSystemInstruction && !_historyWasLoaded) {
                         distinctHistoryFiles = HistoryFileResolver.ResolveHistoryFiles(_config.HistoryPreloadPaths);

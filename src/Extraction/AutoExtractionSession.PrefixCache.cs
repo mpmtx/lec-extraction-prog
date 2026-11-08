@@ -39,8 +39,9 @@ public partial class AutoExtractionSession {
     /// wird ein Handshake gesendet, um den Google-Cache schrittweise aufzubauen.
     /// </summary>
     private async Task<bool> WarmUpWithBatchedHistoryAsync(List<string> historyFiles, string? commonBase) {
+        // Grouped by subfolder of training-history (the history list itself holds files, not folders)
         var batches = HistoryFileResolver.GroupHistoryFilesByTopLevelSubfolder(
-            historyFiles, _config.HistoryPreloadPaths, _config.HistoryBatchCount);
+            historyFiles, [Stage1PromptFiles.HistoryRoot], _config.HistoryBatchCount);
 
         int systemInstructionDelay = Math.Max(0, _config.SystemInstructionDelaySeconds);
         int historyBatchDelay = Math.Max(0, _config.HistoryRateLimitDelaySeconds);

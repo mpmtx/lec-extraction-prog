@@ -174,17 +174,34 @@ public class ExtractionPlannerTests : IDisposable {
         Assert.Equal(Path.Combine(_root, "extracted_output"), plan.TargetFolder);
     }
 
+    /// <summary>A folder counts as missing: prompt files are only loaded when named one by one.</summary>
     [Fact]
-    public void Warnings_IncludesMissingPromptPaths_WhenConfiguredPathDoesNotExist() {
-        var config = Config(parts: 1);
-        string missingPrompt = Path.Combine(_root, "non_existent_prompt.txt");
-        config.SystemInstructionPaths = [missingPrompt];
+    public void FindMissingPromptFiles_ReportsMissingFilesAndFolders() {
+        string present = Video("02-16-2026-monday-week1-Analysis.mp4");
+        string missing = Path.Combine(_root, "non_existent_prompt.md");
 
-        var plan = ExtractionPlanner.Build(config, [Video("02-16-2026-monday-week1-Analysis.mp4")], ExtractionPlanner.DefaultResumeWindowHours, force: false);
+        Assert.Equal([missing, _root], ExtractionPlanner.FindMissingPromptFiles([present, missing, _root]));
+    }
 
-        Assert.NotNull(plan.MissingPromptPaths);
-        Assert.Contains(missingPrompt, plan.MissingPromptPaths);
+    [Fact]
+    public void Warnings_IncludeMissingAndUnlistedPromptFiles() {
+        string missingPrompt = Path.Combine(_root, "non_existent_prompt.md");
+        string unlistedPrompt = Path.Combine(_root, "new-example.md");
+
+        var plan = ExtractionPlanner.Build(Config(parts: 1), [Video("02-16-2026-monday-week1-Analysis.mp4")], ExtractionPlanner.DefaultResumeWindowHours, force: false)
+            with { MissingPromptPaths = [missingPrompt], UnlistedPromptFiles = [unlistedPrompt] };
+
         Assert.Contains(plan.Warnings, w => w.Contains(missingPrompt));
+        Assert.Contains(plan.Warnings, w => w.Contains(unlistedPrompt));
+    }
+
+    /// <summary>Stage 1's prompt files come from the compiled-in list, not from the config.</summary>
+    [Fact]
+    public void Config_TakesThePromptFilesFromStage1PromptFiles() {
+        var config = Config(parts: 1);
+
+        Assert.Equal(Stage1PromptFiles.SystemInstructionPaths, config.SystemInstructionPaths);
+        Assert.Equal(Stage1PromptFiles.HistoryPaths, config.HistoryPreloadPaths);
     }
 }
 

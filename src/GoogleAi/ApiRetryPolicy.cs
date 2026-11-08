@@ -473,7 +473,7 @@ public static partial class ApiRetryPolicy {
         $"Die Anfrage hat {requestTokens:N0} Eingabe-Tokens, das Limit dieses Keys und Modells ist {limit:N0} pro Minute, " +
         "und sie wurde zweimal abgelehnt. Solche Anfragen sind schon durchgegangen, vermutlich dank Prefix-Cache; diesmal nicht (Googles 'Gecacht'-Angabe ist dafür kein Beleg). " +
         "Auswege: Prefix-Cache-Warm-up einschalten (EnableImplicitPrefixCacheWarmup; der Cache greift aber nicht immer), " +
-        "weniger History (HistoryPreloadPaths), keine vorherigen Teile mitschicken (DebugSendReferenceFile = false) oder ein bezahlter Key.";
+        "weniger History (die History-Liste in Stage1PromptFiles), keine vorherigen Teile mitschicken (DebugSendReferenceFile = false) oder ein bezahlter Key.";
 
     [GeneratedRegex(@"limit:\s*(\d+)", RegexOptions.IgnoreCase)]
     private static partial Regex QuotaLimitRegex();

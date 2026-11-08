@@ -83,15 +83,34 @@ public class HistoryFileResolverTests {
             File.WriteAllText(notesMd, "# Notes");
             File.WriteAllText(deletedNotes, "# Old Notes");
 
-            var resolved = HistoryFileResolver.ResolveHistoryFiles([tempDir]);
+            var resolved = HistoryFileResolver.ResolveHistoryFiles(
+                [montageImg, deletedImg1, deltedImg, ignoreImg, notesMd, deletedNotes]);
 
-            Assert.Equal(2, resolved.Count);
-            Assert.Contains(montageImg, resolved);
-            Assert.Contains(notesMd, resolved);
-            Assert.DoesNotContain(deletedImg1, resolved);
-            Assert.DoesNotContain(deltedImg, resolved);
-            Assert.DoesNotContain(ignoreImg, resolved);
-            Assert.DoesNotContain(deletedNotes, resolved);
+            Assert.Equal([montageImg, notesMd], resolved);
+        }
+        finally {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    /// <summary>
+    /// Folders are never expanded (2026-11-08): a prompt file is loaded only when it is named on its own, so
+    /// nothing reaches the model just by sitting in a folder, and the order is the list's order.
+    /// </summary>
+    [Fact]
+    public void ResolveHistoryFiles_does_not_load_a_folder_and_keeps_the_given_order() {
+        AnsiConsole.Console = new TestConsole();
+        string tempDir = Path.Combine(Path.GetTempPath(), $"hist_test_{Path.GetRandomFileName()}");
+        Directory.CreateDirectory(tempDir);
+
+        try {
+            string first = Path.Combine(tempDir, "z-first.md");
+            string second = Path.Combine(tempDir, "a-second.md");
+            File.WriteAllText(first, "# Z");
+            File.WriteAllText(second, "# A");
+
+            Assert.Empty(HistoryFileResolver.ResolveHistoryFiles([tempDir]));
+            Assert.Equal([first, second], HistoryFileResolver.ResolveHistoryFiles([first, tempDir, second, first]));
         }
         finally {
             Directory.Delete(tempDir, true);

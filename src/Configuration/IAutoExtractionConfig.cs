@@ -53,7 +53,7 @@ public interface IAutoExtractionConfig {
     int? ThinkingBudget { get; }
     string? ThinkingLevel { get; }
 
-    // System instruction and history
+    // System instruction and history: Stage 1's compiled-in file lists (Stage1PromptFiles), never a folder
     string[] SystemInstructionPaths { get; }
     string[] HistoryPreloadPaths { get; }
     bool LoadHistoryIntoSystemInstruction { get; }

@@ -324,7 +324,7 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
     private async Task<bool> TryLoadSystemInstructionWithHistoryAsync() {
         if (_config.SystemInstructionPaths == null || _config.SystemInstructionPaths.Length == 0) return true;
 
-        Ui.Info("Folgende System Instruction-Dateien sind konfiguriert:");
+        Ui.Info("Folgende System Instruction-Dateien sind eingetragen (Stage1PromptFiles):");
         var resolvedInstructionFiles = HistoryFileResolver.ResolveHistoryFiles(_config.SystemInstructionPaths, "SystemInstructionPath");
 
         if (resolvedInstructionFiles.Count == 0) {
@@ -333,6 +333,7 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
         }
 
         FileTreeRenderer.PrintFileTree(resolvedInstructionFiles, _config.VerboseConsoleOutput);
+        Stage1PromptFiles.WarnAboutUnlistedFiles();
 
         // Optionally resolve history files that will be merged into the system instruction
         List<string> historyFilesForSystemInstruction = [];

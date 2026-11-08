@@ -32,7 +32,8 @@ public sealed record ExtractionPlan(
     double ResumeWindowHours,
     IReadOnlyList<PlannedVideo> Videos,
     double? GoogleVideoFps = null,
-    IReadOnlyList<string>? MissingPromptPaths = null) {
+    IReadOnlyList<string>? MissingPromptPaths = null,
+    IReadOnlyList<string>? UnlistedPromptFiles = null) {
 
     public int VideoCount => Videos.Count;
 
@@ -70,7 +71,12 @@ public sealed record ExtractionPlan(
 
             if (MissingPromptPaths is { Count: > 0 }) {
                 warnings.AddRange(MissingPromptPaths.Select(path =>
-                    $"Configured prompt path does not exist: '{path}'"));
+                    $"Prompt file listed in Stage1PromptFiles does not exist: '{path}'"));
+            }
+
+            if (UnlistedPromptFiles is { Count: > 0 }) {
+                warnings.AddRange(UnlistedPromptFiles.Select(path =>
+                    $"Prompt file is not loaded, Stage1PromptFiles does not list it: '{path}'"));
             }
 
             return warnings;
@@ -123,21 +129,8 @@ public static class ExtractionPlanner {
 
         string envName = ApiKeyProfileResolver.Resolve(config.ActiveApiProfile, config.AiStudioApiKeyEnvNames);
 
-        List<string> missingPromptPaths = [];
-        if (config.SystemInstructionPaths != null) {
-            foreach (var path in config.SystemInstructionPaths) {
-                if (!string.IsNullOrWhiteSpace(path) && !File.Exists(path) && !Directory.Exists(path)) {
-                    missingPromptPaths.Add(path);
-                }
-            }
-        }
-        if (config.HistoryPreloadPaths != null) {
-            foreach (var path in config.HistoryPreloadPaths) {
-                if (!string.IsNullOrWhiteSpace(path) && !File.Exists(path) && !Directory.Exists(path)) {
-                    missingPromptPaths.Add(path);
-                }
-            }
-        }
+        List<string> missingPromptPaths = FindMissingPromptFiles(
+            (config.SystemInstructionPaths ?? []).Concat(config.HistoryPreloadPaths ?? []));
 
         return new ExtractionPlan(
             Backend: "aistudio",
@@ -156,8 +149,16 @@ public static class ExtractionPlanner {
             ResumeWindowHours: resumeWindowHours,
             Videos: planned,
             GoogleVideoFps: config.GoogleVideoFps,
-            MissingPromptPaths: missingPromptPaths);
+            MissingPromptPaths: missingPromptPaths,
+            UnlistedPromptFiles: Stage1PromptFiles.FindUnlistedFiles());
     }
+
+    /// <summary>
+    /// The prompt files in <paramref name="paths"/> that do not exist. A folder counts as missing: prompt files
+    /// are only loaded when named one by one (<see cref="Stage1PromptFiles"/>).
+    /// </summary>
+    public static List<string> FindMissingPromptFiles(IEnumerable<string> paths) =>
+        [.. paths.Where(path => !string.IsNullOrWhiteSpace(path) && !File.Exists(path))];
 
     private static PlannedVideo Describe(
         string video,

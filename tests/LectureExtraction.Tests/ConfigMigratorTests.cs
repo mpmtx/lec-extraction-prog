@@ -1,4 +1,5 @@
 using LectureExtraction.Configuration;
+using LectureExtraction.Extraction;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json.Linq;
 
@@ -82,8 +83,12 @@ public class ConfigMigratorTests {
         Assert.Equal("LOW", config.ThinkingLevel);
     }
 
+    /// <summary>
+    /// The paths migrate as before; prompt lists in an old config are ignored, because Stage 1 takes its prompt
+    /// files from Stage1PromptFiles. Neither the flat keys nor a Sources section can set or empty them.
+    /// </summary>
     [Fact]
-    public void LegacyPathsAndSources_SurviveMigrationAndBinding() {
+    public void LegacyPaths_SurviveMigrationAndBinding_PromptListsStayCompiledIn() {
         string legacy = """
             {
               "SourceFolder": "D:\\videos\\src",
@@ -93,14 +98,25 @@ public class ConfigMigratorTests {
               "HistoryPreloadPaths": ["C:\\prompts\\history"]
             }
             """;
+        string withSources = """
+            {
+              "Sources": {
+                "SystemInstructionPaths": ["C:\\prompts\\a.md"],
+                "HistoryPreloadPaths": []
+              }
+            }
+            """;
 
         var config = MigrateAndBind<AiStudioAutoExtractionConfig>(legacy);
+        var vertex = MigrateAndBind<VertexAutoExtractionConfig>(withSources);
 
         Assert.Equal(@"D:\videos\src", config.SourceFolder);
         Assert.Equal(@"D:\videos\out", config.TargetFolder);
         Assert.Equal(@"D:\logs", config.LogFolder);
-        Assert.Equal(2, config.SystemInstructionPaths.Length);
-        Assert.Single(config.HistoryPreloadPaths);
+        Assert.Equal(Stage1PromptFiles.SystemInstructionPaths, config.SystemInstructionPaths);
+        Assert.Equal(Stage1PromptFiles.HistoryPaths, config.HistoryPreloadPaths);
+        Assert.Equal(Stage1PromptFiles.SystemInstructionPaths, vertex.SystemInstructionPaths);
+        Assert.Equal(Stage1PromptFiles.HistoryPaths, vertex.HistoryPreloadPaths);
     }
 
     [Fact]

@@ -1,17 +1,18 @@
 using System;
 using System.Text.Json.Serialization;
+using LectureExtraction.Extraction;
 
 namespace LectureExtraction.Configuration;
 
 /// <summary>
 /// [AI Context] Configuration DTO for unattended batch processing using AI Studio endpoints.
-/// Composes shared building blocks (ApiKeyProfile, WorkspacePaths, ContextSources, GenerationParameters, ModelSelection).
+/// Composes shared building blocks (ApiKeyProfile, WorkspacePaths, GenerationParameters, ModelSelection).
+/// The prompt files are not configured here: Stage1PromptFiles lists them.
 /// [Human] Konfiguration für den automatisierten Extraktions-Modus mit dem kostenlosen AI Studio.
 /// </summary>
 public class AiStudioAutoExtractionConfig : IAutoExtractionConfig {
     public ApiKeyProfile ApiKey { get; set; } = new();
     public WorkspacePaths Paths { get; set; } = new();
-    public ContextSources Sources { get; set; } = new();
     public GenerationParameters Generation { get; set; } = new() {
         Temperature = 0.36f,
         TopP = 0.8f,
@@ -27,8 +28,10 @@ public class AiStudioAutoExtractionConfig : IAutoExtractionConfig {
     [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public string[] PredefinedSourceFolders { get => Paths.PredefinedSourceFolders; set => Paths.PredefinedSourceFolders = value; }
     [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public string TargetFolder { get => Paths.TargetFolder; set => Paths.TargetFolder = value; }
     [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public string LogFolder { get => Paths.LogFolder; set => Paths.LogFolder = value; }
-    [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public string[] SystemInstructionPaths { get => Sources.SystemInstructionPaths; set => Sources.SystemInstructionPaths = value; }
-    [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public string[] HistoryPreloadPaths { get => Sources.HistoryPreloadPaths; set => Sources.HistoryPreloadPaths = value; }
+    // Stage 1's prompt files are compiled in (Stage1PromptFiles), not read from the JSON. Get-only on purpose:
+    // the config binder ignores [JsonIgnore] and would set (or empty) any property with a setter.
+    [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public string[] SystemInstructionPaths => Stage1PromptFiles.SystemInstructionPaths;
+    [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public string[] HistoryPreloadPaths => Stage1PromptFiles.HistoryPaths;
 
     [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public float Temperature { get => Generation.Temperature; set => Generation.Temperature = value; }
     [JsonIgnore] [Newtonsoft.Json.JsonIgnore] public float TopP { get => Generation.TopP; set => Generation.TopP = value; }

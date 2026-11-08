@@ -7,8 +7,8 @@ using LectureExtraction.ConsoleUi;
 namespace LectureExtraction.Extraction;
 
 /// <summary>
-/// [AI Context] Resolves configured history/system-instruction path lists (files and directories)
-/// into concrete file lists, and groups them into batches for chunked loading.
+/// [AI Context] Resolves history/system-instruction file lists into absolute paths, and groups them into
+/// batches for chunked loading. Folders are never expanded: every prompt file is named on its own.
 /// </summary>
 public static class HistoryFileResolver {
     private static readonly HashSet<string> s_imageExtensions = new(StringComparer.OrdinalIgnoreCase) {
@@ -52,8 +52,11 @@ public static class HistoryFileResolver {
     public static bool IsDeletedPromptFile(string filePath) => IsIgnoredPromptFile(filePath);
 
     /// <summary>
-    /// Resolves an array of mixed file/directory paths into a distinct list of absolute file paths,
-    /// filtering out non-montage pictures and other files marked with "ignored-" (or a legacy prefix).
+    /// [AI Context] Resolves a list of file paths into a distinct list of absolute paths, in the given order,
+    /// skipping files marked with "ignored-" (or a legacy prefix). A folder is not loaded, only warned about:
+    /// since 2026-11-08 every prompt file is named on its own and in a fixed order (Stage 1: Stage1PromptFiles),
+    /// so nothing enters a prompt just by sitting in a folder.
+    /// [Human] Löst eine Liste von Dateipfaden auf. Ordner werden nicht geladen, nur einzeln genannte Dateien.
     /// </summary>
     public static List<string> ResolveHistoryFiles(string[] paths, string label = "Konfigurierter Pfad") {
         List<string> allHistoryFiles = [];
@@ -64,20 +67,18 @@ public static class HistoryFileResolver {
                 if (!IsDeletedPromptFile(path))
                     allHistoryFiles.Add(Path.GetFullPath(path));
             }
-            else if (Directory.Exists(path)) {
-                allHistoryFiles.AddRange(Directory.GetFiles(path, "*.*", SearchOption.AllDirectories)
-                    .Where(f => !IsDeletedPromptFile(f))
-                    .Select(f => Path.GetFullPath(f)));
-            }
+            else if (Directory.Exists(path))
+                Ui.Warn($"{label} ist ein Ordner und wird nicht geladen (nur einzeln genannte Dateien werden geladen): {path}");
             else
-                Ui.Warn($"{label} nicht gefunden (weder Datei noch Ordner): {path}");
+                Ui.Warn($"{label} nicht gefunden: {path}");
         }
         return [.. allHistoryFiles.Distinct(StringComparer.OrdinalIgnoreCase)];
     }
 
     /// <summary>
     /// [AI Context] Groups a flat list of resolved history files into at most <paramref name="batchCount"/> batches.
-    /// Step 1: Files are grouped by their top-level subfolder relative to any HistoryPreloadPath root.
+    /// Step 1: Files are grouped by their subfolder relative to one of <paramref name="historyPreloadPaths"/>, the
+    ///         root folders (Stage 1 passes Stage1PromptFiles.HistoryRoot).
     /// Step 2: Those subfolder-groups are distributed evenly into batchCount buckets (chunked).
     ///         If batchCount &lt;= 1, all files are returned as a single batch.
     ///         If batchCount &gt;= subfolder count, each subfolder is its own batch (one-per-subfolder mode).

@@ -3,9 +3,16 @@
 Written for an AI agent (or any unattended script) operating `lecx`. If you read one
 file, read this one.
 
-The binary is `bin/Debug/net10.0/lec-extraction-prog.exe`. `lecx.cmd` in the repository
-root is a shim for the same thing. **Running it with no arguments starts an interactive
-menu that will block forever** — always pass a command.
+`lecx.cmd` in the repository root runs `bin/Release/net10.0/lec-extraction-prog.exe` when
+that exists and `bin/Debug/net10.0/lec-extraction-prog.exe` only otherwise. So after a code
+change, build Release (`dotnet build -c Release`): a Debug build alone leaves `lecx` on the
+old binary (it sat at 2026-10-30 until 2026-11-08). **Running it with no arguments starts an
+interactive menu that will block forever** — always pass a command.
+
+Stage 1's prompt files are not in any config: `src/Extraction/Stage1PromptFiles.cs` names
+every one, in the order it is sent, and no folder is ever loaded. A file added to the prompt
+repository reaches the model only after it is listed there and the binary is rebuilt;
+`lecx plan` warns about a listed file that is missing and an unlisted one that exists.
 
 ---
 
@@ -263,7 +270,7 @@ only. Should an upload fail, that file falls back to being inlined unslimmed, so
 
 **`InlineHistory: false` does the same for the training history (added 2026-10-25, not yet run).** Optional
 key in `AiStudioAutoExtractionConfig.json`; absent or `true` changes nothing. With `false`, each history text
-file (`.md`, `.txt`, `.tex` under `HistoryPreloadPaths`) is uploaded as `text/plain` and linked at the very
+file (`.md`, `.txt`, `.tex` in the history list of `Stage1PromptFiles`) is uploaded as `text/plain` and linked at the very
 start of the user turn, after one note saying it belongs to the system instructions, each link preceded by
 the file's path. It goes into the user turn even with `LoadHistoryIntoSystemInstruction: true`, because the
 system instruction rejects file links (`500 Internal error`, gemini-cache-probe e13). The system instruction
@@ -276,7 +283,7 @@ the earlier-parts test was checked (opening section, `hh:mm:ss` timestamps, fill
 
 After the second refusal the part fails with `Die Anfrage hat N Eingabe-Tokens … zweimal
 abgelehnt` and the video exits `6`. Ways out: `InlinePrecedingLecTexParts: false` (above),
-`InlineHistory: false` (above), less history (`HistoryPreloadPaths`), no earlier parts
+`InlineHistory: false` (above), less history (the history list in `Stage1PromptFiles`, then rebuild), no earlier parts
 (`DebugSendReferenceFile: false`), or a paid key.
 Turning the warm-up on does not help.
 
