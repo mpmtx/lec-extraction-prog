@@ -61,14 +61,16 @@ public static class Stage1PromptFiles {
         "big-examples/big-examples-typography-notation.md",
     ];
 
-    /// <summary>The training history, in the order it is sent (montage sources with the ignored- prefix are not listed).</summary>
+    /// <summary>The training history, in the order it is sent (files with the ignored- prefix are not listed: the fidelity montage's sources and the six montages retired on 2026-11-08).</summary>
     public static readonly IReadOnlyList<string> HistoryFiles = [
-        "training-history/shared-montage.jpg",
+        "training-history/board-transcription-examples/auswahlaxiom/auswahlaxiom.jpg",
         "training-history/board-transcription-examples/auswahlaxiom/auswahlaxiom.md",
-        "training-history/board-transcription-examples/beschleunigte_bewegung/beschl-montage.jpg",
         "training-history/board-transcription-examples/beschleunigte_bewegung/beschl_bewegung.md",
+        "training-history/board-transcription-examples/beschleunigte_bewegung/beschl_wandtafel1.jpg",
+        "training-history/board-transcription-examples/beschleunigte_bewegung/beschl_wandtafel2.jpg",
+        "training-history/board-transcription-examples/kartesisches_produkt/kart_board.jpg",
         "training-history/board-transcription-examples/kartesisches_produkt/kart_explaination.md",
-        "training-history/board-transcription-examples/section_headers/section-headers-montage.jpg",
+        "training-history/board-transcription-examples/small-detail/screenshot1.jpg",
         "training-history/board-transcription-examples/small-detail/screenshot1.md",
         "training-history/board-transcription-examples/tabular/tabular1.md",
         "training-history/board-transcription-examples/variablenbelegung/BAD-example-variablenbelegung.md",
@@ -77,15 +79,19 @@ public static class Stage1PromptFiles {
         "training-history/board-transcription-examples/writes-note-fidelity/tidied-notes.png",
         "training-history/board-transcription-examples/writes-note-fidelity/writes-note-fidelity-montage.jpg",
         "training-history/conventions/proofs/proof_vs_short_proof.md",
-        "training-history/conventions/workflow/workflow-montage.jpg",
         "training-history/didactic_examples/2.5-minute-rule/BAD-GOOD-example-2.5-minute-rule.md",
         "training-history/didactic_examples/anti-duplication/BAD-GOOD-example-anti-duplication-and-semantic-hygiene.md",
         "training-history/didactic_examples/graph-and-tables/BAD-GOOD-example-graph-schlichtheit-tabular-vs-align.md",
         "training-history/didactic_examples/remark-environment/BAD-GOOD-example-remark-environment.md",
         "training-history/didactic_examples/remark-environment/BAD-GOOD-example-tutor-hat-phantom.md",
+        "training-history/tikz-examples/blackboard-example/blackboard-example-1-BAD-result.jpg",
+        "training-history/tikz-examples/blackboard-example/blackboard-example-1.jpg",
         "training-history/tikz-examples/blackboard-example/blackboard-example-good.png",
         "training-history/tikz-examples/blackboard-example/blackboard-example.md",
-        "training-history/tikz-examples/block-diagrams/block-diagrams-montage.jpg",
+        "training-history/tikz-examples/block-diagrams/1-timeline.png",
+        "training-history/tikz-examples/block-diagrams/2-security-game.png",
+        "training-history/tikz-examples/block-diagrams/3-xor-labels.png",
+        "training-history/tikz-examples/block-diagrams/4-cbc-wires.png",
         "training-history/tikz-examples/block-diagrams/block-diagrams.md",
         "training-history/tikz-examples/cramped-figures/1-unit-square-bad.png",
         "training-history/tikz-examples/cramped-figures/1-unit-square-good.png",
@@ -116,7 +122,8 @@ public static class Stage1PromptFiles {
         "training-history/tikz-examples/slide-callout-table/slide-callout-table-good.png",
         "training-history/tikz-examples/slide-callout-table/slide-callout-table-slide.jpg",
         "training-history/tikz-examples/slide-callout-table/slide-callout-table.md",
-        "training-history/tikz-examples/slide-color-fidelity/slide-color-fidelity-montage.jpg",
+        "training-history/tikz-examples/slide-color-fidelity/1-slide.png",
+        "training-history/tikz-examples/slide-color-fidelity/2-bad-good.png",
         "training-history/tikz-examples/slide-color-fidelity/slide-color-fidelity.md",
         "training-history/tikz-examples/slide-copy-styling/slide-copy-styling-good.png",
         "training-history/tikz-examples/slide-copy-styling/slide-copy-styling-slide.png",
@@ -127,9 +134,18 @@ public static class Stage1PromptFiles {
         "training-history/tikz-examples/slide-shape-meaning/slide-shape-meaning.jpg",
         "training-history/tikz-examples/slide-shape-meaning/slide-shape-meaning.md",
         "training-history/tikz-examples/using_colors/using_colors_for_didactic_enhancement_cantor_bernstein_schroeder_thm.md",
+        "training-history/board-transcription-examples/section_headers/example-1/sectioning_example1-continued.jpg",
+        "training-history/board-transcription-examples/section_headers/example-1/sectioning_example1.jpg",
         "training-history/board-transcription-examples/section_headers/example-1/sectioning_example1.md",
         "training-history/board-transcription-examples/section_headers/example-2/section_headers_example_2.md",
+        "training-history/board-transcription-examples/section_headers/example-2/section_headers_example_2_part1.jpg",
+        "training-history/board-transcription-examples/section_headers/example-2/section_headers_example_2_part2.jpg",
+        "training-history/board-transcription-examples/section_headers/example-2/section_headers_example_2_part3.jpg",
+        "training-history/board-transcription-examples/section_headers/example-2/section_headers_example_2_part4.jpg",
+        "training-history/conventions/workflow/transcription_endings_1/transcription_endings.jpg",
         "training-history/conventions/workflow/transcription_endings_1/transcription_endings.md",
+        "training-history/conventions/workflow/transcription_ending_2_speech_length/beginning_of_part_2.jpg",
+        "training-history/conventions/workflow/transcription_ending_2_speech_length/end_of_part_1.jpg",
         "training-history/conventions/workflow/transcription_ending_2_speech_length/workflow2.md",
         "training-history/didactic_examples/analysis2/cramped_math/2-sphere.md",
         "training-history/didactic_examples/analysis2/gauss–green–stokes-divergence-theorem/gauss-green-stokes-divergence-theorem1.md",
@@ -147,7 +163,7 @@ public static class Stage1PromptFiles {
     /// <summary>
     /// [AI Context] Files under <see cref="Root"/> that the lists do not name, so they are not sent: usually a
     /// prompt file added to the repository but not here. Skips archive/ (kept out on purpose) and the files with
-    /// an ignored- prefix (montage sources). This walks the folders only to compare; it loads nothing.
+    /// an ignored- prefix (the fidelity montage's sources, retired montages). This walks the folders only to compare; it loads nothing.
     /// Empty when <see cref="Root"/> does not exist on this machine.
     /// [Human] Dateien im Prompt-Ordner, die nicht in der Liste stehen und darum nicht geladen werden.
     /// </summary>
