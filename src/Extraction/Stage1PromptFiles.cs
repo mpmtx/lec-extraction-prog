@@ -154,6 +154,9 @@ public static class Stage1PromptFiles {
         "training-history/tikz-examples/slide-framed-definition/slide-framed-definition.md",
         "training-history/tikz-examples/slide-shape-meaning/slide-shape-meaning.jpg",
         "training-history/tikz-examples/slide-shape-meaning/slide-shape-meaning.md",
+        "training-history/tikz-examples/triangle-in-ball/triangle-in-ball-bad.png",
+        "training-history/tikz-examples/triangle-in-ball/triangle-in-ball-good.png",
+        "training-history/tikz-examples/triangle-in-ball/triangle-in-ball.md",
         "training-history/tikz-examples/using_colors/using_colors_for_didactic_enhancement_cantor_bernstein_schroeder_thm.md",
     ];
 
