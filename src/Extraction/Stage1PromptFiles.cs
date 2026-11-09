@@ -15,8 +15,11 @@ namespace LectureExtraction.Extraction;
 /// Moving a prompt file means editing this list and rebuilding. <see cref="FindUnlistedFiles"/> reports a file
 /// that sits in the prompt folders but is missing here (lecx plan and the session start warn about it), and
 /// ExtractionPlanner reports a listed file that does not exist.
-/// The order is the one the folder entries produced before 2026-11-08 (each folder alphabetical, the history
-/// breadth-first), plus the four files split out of transcription.md, which follow it in their old order.
+/// The order (since 2026-11-09): each hub file (transcription.md, environments.md, big-examples.md) followed by its
+/// folder's files in the order the hub's own index lists them, so the model reads the files in the order it was just
+/// told; the history folder by folder (alphabetical, the two workflow folders by their number), each folder's files
+/// together. Before, the folders were alphabetical and the history breadth-first, which put section_headers/,
+/// conventions/workflow/ and analysis2/ at the very end. Reordering a hub's index means reordering this list too.
 /// [Human] Die Stage-1-Prompt-Dateien, einzeln und in fester Reihenfolge. Ordner werden nicht geladen: eine neue
 /// Prompt-Datei muss hier eingetragen werden (dann neu bauen).
 /// </summary>
@@ -35,30 +38,30 @@ public static class Stage1PromptFiles {
         "transcription/transcription-speech-writing.md",
         "transcription/transcription-notation.md",
         "environments.md",
-        "environments/environments-content.md",
-        "environments/environments-document-structure.md",
-        "environments/environments-inlinemetanote.md",
-        "environments/environments-invisible-layer.md",
-        "environments/environments-pedagogical-boxes.md",
-        "environments/environments-proof-wrappers.md",
-        "environments/environments-speech.md",
         "environments/environments-syntax-rules.md",
         "environments/environments-theorem-family.md",
+        "environments/environments-speech.md",
+        "environments/environments-inlinemetanote.md",
+        "environments/environments-content.md",
         "environments/environments-tikz.md",
+        "environments/environments-pedagogical-boxes.md",
+        "environments/environments-proof-wrappers.md",
+        "environments/environments-document-structure.md",
+        "environments/environments-invisible-layer.md",
         "big-examples.md",
-        "big-examples/big-examples-anti-patterns.md",
-        "big-examples/big-examples-audio-fidelity.md",
-        "big-examples/big-examples-compilation-errors.md",
         "big-examples/big-examples-document-conventions.md",
         "big-examples/big-examples-document-hierarchy.md",
         "big-examples/big-examples-environment-usage.md",
-        "big-examples/big-examples-example-scenarios.md",
-        "big-examples/big-examples-fallback-strategy.md",
-        "big-examples/big-examples-formula-formatting.md",
-        "big-examples/big-examples-list-enumeration.md",
-        "big-examples/big-examples-proof-structuring.md",
         "big-examples/big-examples-speech-structuring.md",
+        "big-examples/big-examples-proof-structuring.md",
+        "big-examples/big-examples-formula-formatting.md",
         "big-examples/big-examples-typography-notation.md",
+        "big-examples/big-examples-list-enumeration.md",
+        "big-examples/big-examples-example-scenarios.md",
+        "big-examples/big-examples-anti-patterns.md",
+        "big-examples/big-examples-audio-fidelity.md",
+        "big-examples/big-examples-fallback-strategy.md",
+        "big-examples/big-examples-compilation-errors.md",
     ];
 
     /// <summary>The training history, in the order it is sent (files with the ignored- prefix are not listed: the fidelity montage's sources and the six montages retired on 2026-11-08).</summary>
@@ -70,6 +73,14 @@ public static class Stage1PromptFiles {
         "training-history/board-transcription-examples/beschleunigte_bewegung/beschl_wandtafel2.jpg",
         "training-history/board-transcription-examples/kartesisches_produkt/kart_board.jpg",
         "training-history/board-transcription-examples/kartesisches_produkt/kart_explaination.md",
+        "training-history/board-transcription-examples/section_headers/example-1/sectioning_example1-continued.jpg",
+        "training-history/board-transcription-examples/section_headers/example-1/sectioning_example1.jpg",
+        "training-history/board-transcription-examples/section_headers/example-1/sectioning_example1.md",
+        "training-history/board-transcription-examples/section_headers/example-2/section_headers_example_2.md",
+        "training-history/board-transcription-examples/section_headers/example-2/section_headers_example_2_part1.jpg",
+        "training-history/board-transcription-examples/section_headers/example-2/section_headers_example_2_part2.jpg",
+        "training-history/board-transcription-examples/section_headers/example-2/section_headers_example_2_part3.jpg",
+        "training-history/board-transcription-examples/section_headers/example-2/section_headers_example_2_part4.jpg",
         "training-history/board-transcription-examples/small-detail/screenshot1.jpg",
         "training-history/board-transcription-examples/small-detail/screenshot1.md",
         "training-history/board-transcription-examples/tabular/tabular1.md",
@@ -79,7 +90,14 @@ public static class Stage1PromptFiles {
         "training-history/board-transcription-examples/writes-note-fidelity/tidied-notes.png",
         "training-history/board-transcription-examples/writes-note-fidelity/writes-note-fidelity-montage.jpg",
         "training-history/conventions/proofs/proof_vs_short_proof.md",
+        "training-history/conventions/workflow/transcription_endings_1/transcription_endings.jpg",
+        "training-history/conventions/workflow/transcription_endings_1/transcription_endings.md",
+        "training-history/conventions/workflow/transcription_ending_2_speech_length/beginning_of_part_2.jpg",
+        "training-history/conventions/workflow/transcription_ending_2_speech_length/end_of_part_1.jpg",
+        "training-history/conventions/workflow/transcription_ending_2_speech_length/workflow2.md",
         "training-history/didactic_examples/2.5-minute-rule/BAD-GOOD-example-2.5-minute-rule.md",
+        "training-history/didactic_examples/analysis2/cramped_math/2-sphere.md",
+        "training-history/didactic_examples/analysis2/gauss–green–stokes-divergence-theorem/gauss-green-stokes-divergence-theorem1.md",
         "training-history/didactic_examples/anti-duplication/BAD-GOOD-example-anti-duplication-and-semantic-hygiene.md",
         "training-history/didactic_examples/graph-and-tables/BAD-GOOD-example-graph-schlichtheit-tabular-vs-align.md",
         "training-history/didactic_examples/remark-environment/BAD-GOOD-example-remark-environment.md",
@@ -137,21 +155,6 @@ public static class Stage1PromptFiles {
         "training-history/tikz-examples/slide-shape-meaning/slide-shape-meaning.jpg",
         "training-history/tikz-examples/slide-shape-meaning/slide-shape-meaning.md",
         "training-history/tikz-examples/using_colors/using_colors_for_didactic_enhancement_cantor_bernstein_schroeder_thm.md",
-        "training-history/board-transcription-examples/section_headers/example-1/sectioning_example1-continued.jpg",
-        "training-history/board-transcription-examples/section_headers/example-1/sectioning_example1.jpg",
-        "training-history/board-transcription-examples/section_headers/example-1/sectioning_example1.md",
-        "training-history/board-transcription-examples/section_headers/example-2/section_headers_example_2.md",
-        "training-history/board-transcription-examples/section_headers/example-2/section_headers_example_2_part1.jpg",
-        "training-history/board-transcription-examples/section_headers/example-2/section_headers_example_2_part2.jpg",
-        "training-history/board-transcription-examples/section_headers/example-2/section_headers_example_2_part3.jpg",
-        "training-history/board-transcription-examples/section_headers/example-2/section_headers_example_2_part4.jpg",
-        "training-history/conventions/workflow/transcription_endings_1/transcription_endings.jpg",
-        "training-history/conventions/workflow/transcription_endings_1/transcription_endings.md",
-        "training-history/conventions/workflow/transcription_ending_2_speech_length/beginning_of_part_2.jpg",
-        "training-history/conventions/workflow/transcription_ending_2_speech_length/end_of_part_1.jpg",
-        "training-history/conventions/workflow/transcription_ending_2_speech_length/workflow2.md",
-        "training-history/didactic_examples/analysis2/cramped_math/2-sphere.md",
-        "training-history/didactic_examples/analysis2/gauss–green–stokes-divergence-theorem/gauss-green-stokes-divergence-theorem1.md",
     ];
 
     /// <summary>[AI Context] Absolute paths of <see cref="SystemInstructionFiles"/>.</summary>

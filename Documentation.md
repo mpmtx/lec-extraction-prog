@@ -101,7 +101,7 @@ The pipeline supports both environments, but they handle payloads very different
 Instead of relying on monolithic markdown blobs, the pipeline sends multiple distinct instruction files (`transcription.md`, its `transcription/` files, `environments.md`, etc.). For Stage 1 they are compiled in: `src/Extraction/Stage1PromptFiles.cs` names every system instruction and history file, in the order it is sent, and no folder is loaded (since 2026-11-08; before, the configs' `Sources` lists could name whole folders, which loaded every file in them in file-system order). The Stage 1 configs no longer have prompt lists; `lecx plan` warns about a listed file that is missing and about a file in the prompt folders that the list does not name. Before injecting each file into the prompt payload, the application wraps it with clear delimiter headers (`******\n------\n******\nHere is the file 'filename.md':\n`). This explicit separation prevents LLM attention bleeding between distinct instructional domains.
 
 ### Attention Map Priming
-To maximize orientation and logical hierarchy adherence, the application generates an ASCII folder tree structure of the loaded system instructions and injects it at the absolute beginning of the system prompt. By observing this structural "map" first, Gemini primes its internal attention mechanism on codebase orientation and logical category separation before parsing specific syntax rules.
+The system instruction opens with a list of every prompt file ("Folder Structure of System Instructions"): one `- ./relative/path` line per file, system instructions first, then the training history. Since 2026-10-03 it is a flat path list rather than an emoji box-drawing tree (half the tokens, ~1.2k per request), and since 2026-11-09 it keeps the order the files are sent in (`Stage1PromptFiles`: each hub file followed by its folder in the hub's own index order, the history folder by folder), so it doubles as a table of contents. `FileTreeRenderer.GenerateMarkdownFileTree` writes it; the path is also what ties an attached history image to the `.md` file that explains it.
 
 ### Strict Multipart Separation (Vertex AI)
 Vertex AI enforces strict schema purity on the `SystemInstruction` field: it exclusively accepts pure `text` parts. If binary data (such as image attachments from `Training History`) is passed inside `SystemInstruction`, Vertex AI rejects the request with a `ClientError`. The pipeline intercepts binary history attachments and dynamically routes them to the user prompt `contents` payload, guaranteeing cross-tier compatibility.
@@ -115,7 +115,7 @@ To verify exact prompt construction and ensure `Training History` metadata is ca
 +---------------------------------------------------------------------------------+
 |                                                                                 |
 |  [SystemInstruction Payload (Strict Pure Text)]                                 |
-|  ├── 1. Attention Map Priming (ASCII Folder Tree of Instruction Hierarchy)      |
+|  ├── 1. File list (flat paths, in the order the files follow)                   |
 |  ├── 2. transcription.md (Framed with delimiter headers)                        |
 |  ├── 3. hard-specs.md (Framed with delimiter headers)                           |
 |  └── 4. environments.md (Framed with delimiter headers)                         |
@@ -517,7 +517,7 @@ Die Pipeline unterstützt beide Umgebungen, aber sie behandeln Payloads intern s
 Statt monolithische Markdown-Blöcke zu nutzen, schickt die Pipeline mehrere getrennte Anweisungsdateien (`transcription.md`, seine `transcription/`-Dateien, `environments.md` etc.). Für Stage 1 sind sie einkompiliert: `src/Extraction/Stage1PromptFiles.cs` nennt jede System-Instruction- und History-Datei einzeln, in der Reihenfolge, in der sie gesendet wird; Ordner werden nicht geladen (seit 2026-11-08; vorher konnten die `Sources`-Listen der Konfiguration ganze Ordner nennen, deren Dateien dann in Dateisystem-Reihenfolge geladen wurden). Die Stage-1-Konfigurationen haben keine Prompt-Listen mehr; `lecx plan` warnt vor einer eingetragenen Datei, die fehlt, und vor einer Datei in den Prompt-Ordnern, die nicht eingetragen ist. Vor der Injektion jeder Datei in den Prompt wird sie mit klaren Trenn-Headern versehen (`******\n------\n******\nHere is the file 'dateiname.md':\n`). Diese explizite Trennung verhindert Aufmerksamkeitssprünge (Attention Bleeding) der KI zwischen verschiedenen Domänen.
 
 ### Attention Map Priming
-Um die Orientierung und Einhaltung logischer Hierarchien zu maximieren, erzeugt die Anwendung eine ASCII-Ordnerstruktur der geladenen Systemanweisungen und setzt diese an den absoluten Anfang des System-Prompts. Indem Gemini diese strukturelle "Landkarte" als Erstes sieht, wird der interne Attention-Mechanismus auf Orientierung und logische Kategorisierung getrimmt, bevor spezifische Syntaxregeln verarbeitet werden.
+Die System Instruction beginnt mit einer Liste aller Prompt-Dateien ("Folder Structure of System Instructions"): eine Zeile `- ./relativer/pfad` pro Datei, zuerst die System Instructions, dann die Training History. Seit 2026-10-03 ist das eine flache Pfadliste statt eines Emoji-Baums (halb so viele Tokens, ~1,2k pro Request), und seit 2026-11-09 behält sie die Reihenfolge, in der die Dateien gesendet werden (`Stage1PromptFiles`: jede Hub-Datei, dann ihr Ordner in der Reihenfolge ihres eigenen Index, die History Ordner für Ordner), und dient so als Inhaltsverzeichnis. `FileTreeRenderer.GenerateMarkdownFileTree` schreibt sie; der Pfad ist auch das, was ein angehängtes History-Bild mit der `.md`-Datei verbindet, die es erklärt.
 
 ### Strikte Multipart-Trennung (Vertex AI)
 Vertex AI erzwingt strikte Schemareinheit im `SystemInstruction`-Feld: Es akzeptiert ausschließlich reine `text`-Parts. Werden binäre Daten (wie Bildanhänge aus der `Training History`) in `SystemInstruction` übergeben, lehnt Vertex AI die Anfrage mit einem `ClientError` ab. Die Pipeline fängt binäre History-Anhänge ab und leitet sie dynamisch in den `contents`-Körper des User-Prompts weiter, was die Kompatibilität zwischen AI Studio und Vertex garantiert.
@@ -531,7 +531,7 @@ Um den exakten Prompt-Aufbau zu verifizieren und sicherzustellen, dass Anhänge 
 +---------------------------------------------------------------------------------+
 |                                                                                 |
 |  [SystemInstruction Payload (Strikt reiner Text)]                               |
-|  ├── 1. Attention Map Priming (ASCII-Ordnerbaum der Instruktionshierarchie)     |
+|  ├── 1. Dateiliste (flache Pfade, in Sendereihenfolge)                          |
 |  ├── 2. transcription.md (Eingefasst mit Trenn-Headern)                         |
 |  ├── 3. hard-specs.md (Eingefasst mit Trenn-Headern)                            |
 |  └── 4. environments.md (Eingefasst mit Trenn-Headern)                          |

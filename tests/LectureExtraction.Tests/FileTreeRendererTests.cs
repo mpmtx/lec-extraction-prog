@@ -61,4 +61,36 @@ public class FileTreeRendererTests {
     public void FindCommonBaseDirectory_OfNothing_IsNull() {
         Assert.Null(FileTreeRenderer.FindCommonBaseDirectory([]));
     }
+
+    // ---- GenerateMarkdownFileTree ------------------------------------------
+    // The list goes into every Stage 1 request as the prompt's table of contents, so it must keep
+    // the order the files are sent in, not sort them.
+
+    [Fact]
+    public void GenerateMarkdownFileTree_KeepsTheGivenOrder() {
+        string root = Path.Combine(Path.GetTempPath(), "lec-test", "prompt");
+        List<string> paths = [
+            Path.Combine(root, "transcription.md"),
+            Path.Combine(root, "environments", "environments-syntax-rules.md"),
+            Path.Combine(root, "environments", "environments-content.md"),
+            Path.Combine(root, "big-examples.md"),
+        ];
+
+        string list = FileTreeRenderer.GenerateMarkdownFileTree(paths, root);
+
+        Assert.Equal(
+            $"Root: {root}\n- ./transcription.md\n- ./environments/environments-syntax-rules.md\n" +
+            "- ./environments/environments-content.md\n- ./big-examples.md\n",
+            list.Replace("\r\n", "\n"));
+    }
+
+    [Fact]
+    public void GenerateMarkdownFileTree_ListsADuplicateOnce() {
+        string root = Path.Combine(Path.GetTempPath(), "lec-test", "prompt");
+        string file = Path.Combine(root, "a.md");
+
+        string list = FileTreeRenderer.GenerateMarkdownFileTree([file, file], root);
+
+        Assert.Equal($"Root: {root}\n- ./a.md\n", list.Replace("\r\n", "\n"));
+    }
 }

@@ -60,32 +60,26 @@ public static partial class FileTreeRenderer {
         // [AI Context] This text goes into every Gemini request, so it is a flat list of relative
         // paths: the box-drawing tree, the emoji icons and the repeated file names of the console
         // view cost ~2k tokens per request and tell the model nothing the paths do not.
-        var root = BuildVirtualTree(filePaths, baseDir);
+        // The paths keep the order of filePaths, which is the order the files are sent in
+        // (Stage1PromptFiles), so the list doubles as a table of contents. Until 2026-11-09 it was
+        // sorted (files before folders, by name) and matched neither that order nor the hubs' indexes.
         var sb = new System.Text.StringBuilder();
         if (!string.IsNullOrEmpty(baseDir)) {
             sb.AppendLine($"Root: {baseDir}");
         }
-        RenderFlatPathList(root, line => sb.AppendLine(line));
-        return sb.ToString();
-    }
-
-    /// <summary>
-    /// [AI Context] Writes one "- ./relative/path" line per file, in the same order as the tree
-    /// view (files before folders, each level sorted by name).
-    /// </summary>
-    private static void RenderFlatPathList(VirtualTreeNode node, Action<string> writeLine) {
-        var children = node.Children.Values
-            .OrderBy(c => c.IsDirectory ? 1 : 0)
-            .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var child in children) {
-            if (child.IsDirectory) {
-                RenderFlatPathList(child, writeLine);
-            }
-            else {
-                writeLine($"- {child.RelativePath ?? child.Name}");
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in filePaths) {
+            if (string.IsNullOrWhiteSpace(path)) continue;
+            string relPath = !string.IsNullOrEmpty(baseDir)
+                ? Path.GetRelativePath(baseDir, path).Replace('\\', '/')
+                : path.Replace('\\', '/');
+            if (relPath == "." || relPath == string.Empty) continue;
+            string normalized = NormalizeRelativePath(CleanCopySuffix(relPath));
+            if (seen.Add(normalized)) {
+                sb.AppendLine($"- {normalized}");
             }
         }
+        return sb.ToString();
     }
 
     /// <summary>
