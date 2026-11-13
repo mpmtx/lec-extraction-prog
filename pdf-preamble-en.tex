@@ -619,9 +619,9 @@ pdfauthor={Prof. Rahul Pandharipande}
 % Custom text commands
 \newif\ifinsideqt
 \insideqtfalse
-\newcommand{\qt}[1]{%
+\DeclareRobustCommand{\qt}[1]{%
   \ifinsideqt
-    \textit{``#1''}%
+    ``#1''%
   \else
     \begingroup
     \insideqttrue
@@ -629,10 +629,10 @@ pdfauthor={Prof. Rahul Pandharipande}
     \endgroup
   \fi
 }
-\newcommand{\newterm}[1]{%
+\DeclareRobustCommand{\newterm}[1]{%
   \begingroup
   \ifinsideqt
-    \textcolor{TextBoldColor}{\textit{``#1''}}%
+    \textcolor{TextBoldColor}{``#1''}%
   \else
     \textcolor{QuoteRed}{``}\textcolor{TextBoldColor}{\textit{%
       \begingroup
@@ -644,13 +644,13 @@ pdfauthor={Prof. Rahul Pandharipande}
   \fi
   \endgroup
 }
-\newcommand{\inlinemetanote}[1]{%
+\DeclareRobustCommand{\inlinemetanote}[1]{%
   \textcolor{TextMetaNote}{%
     \insideqttrue
     \colorlet{QuoteRed}{TextMetaNote}%
     \colorlet{TextBoldColor}{TextMetaNote}%
     \colorlet{TextEmphColor}{TextMetaNote}%
-    \footnotesize\textit{[#1]}%
+    \footnotesize\upshape[#1]%
   }%
 } % quote marks, textbf, emph and brackets grey too
 \let\inlinematenote\inlinemetanote
@@ -666,7 +666,7 @@ pdfauthor={Prof. Rahul Pandharipande}
 \newcommand{\NewIconThmStyle}[3]{%
 \newtheoremstyle{#1}%
 {\customenvspace}{\customenvspace}{\normalfont}{}{\color{#2}\sffamily\bfseries}{:}{0.5em}%
-{#3\hspace{0.4em}\thmname{##1}\thmnumber{ ##2}\thmnote{ \textcolor{#2}{\bfseries(}{\normalfont\sffamily\textit{##3}}\textcolor{#2}{\bfseries)}}}%
+{#3\hspace{0.4em}\thmname{##1}\thmnumber{ ##2}\thmnote{ \textcolor{#2}{\bfseries(}{\normalfont\unboldmath\sffamily\textit{##3}}\textcolor{#2}{\bfseries)}}}%
 }
 \NewIconThmStyle{purplethm}{EnvTheorem}{\faGem}
 \NewIconThmStyle{defthm}{EnvTheorem}{\faBookOpen}
@@ -1246,6 +1246,9 @@ breakable
   \let\proofwrappertoctitle\@firstofone
   \let\cref\proofwrapper@pdfref
   \let\Cref\proofwrapper@pdfref
+  \def\qt#1{\textquotedblleft#1\textquotedblright}%
+  \def\newterm#1{\textquotedblleft#1\textquotedblright}%
+  \def\inlinemetanote#1{[#1]}%
 }
 
 \newcommand{\proofwrapper@fontsize}{%
@@ -1375,6 +1378,7 @@ breakable
 
 \definecolor{SubSubSecBarOne}{HTML}{2B4C7E}
 \definecolor{SubSubSecBarTwo}{HTML}{7E42B3}
+
 
 % Heading text colors:
 \colorlet{SecTitleCol}{SecTitleColor}
