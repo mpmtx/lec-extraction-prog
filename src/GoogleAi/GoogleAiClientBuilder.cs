@@ -56,7 +56,9 @@ public static class GoogleAiClientBuilder {
     /// [Human] Erstellt den Client für die Google AI Studio API mit dem übergebenen API-Key. Setzt ein Timeout von 20 Minuten für lange Anfragen.
     /// </summary>
     public static Client BuildAiStudioClient(string apiKey) {
+        // Google.GenAI 2.0+ switched the Gemini Developer API default from v1beta to v1; pin v1beta to preserve 1.11.0 preview model, ThinkingConfig, Files and Long Decode support.
         var options = new HttpOptions {
+            ApiVersion = "v1beta",
             Timeout = (int)TimeSpan.FromMinutes(20).TotalMilliseconds
         };
         Ui.Detail("Verbinde mit Google AI Studio API...");

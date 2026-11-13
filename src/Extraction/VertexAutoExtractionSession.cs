@@ -424,7 +424,8 @@ public partial class VertexAutoExtractionSession(Client client, VertexAutoExtrac
             Temperature = _config.Temperature,
             TopP = _config.TopP,
             TopK = _config.TopK,
-            MaxOutputTokens = _config.MaxOutputTokens
+            MaxOutputTokens = _config.MaxOutputTokens,
+            AutomaticContinuation = false
         };
 
         if (_config.UseGoogleSearch) {

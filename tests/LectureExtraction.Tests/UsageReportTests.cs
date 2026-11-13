@@ -135,4 +135,17 @@ public class UsageReportTests {
 
         Assert.Equal("MAX_TOKENS", report.FinishReason);
     }
+
+    [Fact]
+    public void Output_budget_identifies_long_decode_continuation_separately_from_max_tokens() {
+        var report = new UsageReport();
+        report.Absorb(new GenerateContentResponseUsageMetadata { CandidatesTokenCount = 3, ThoughtsTokenCount = 65533 });
+        report.RecordFinishReason("CONTINUATION");
+
+        string line = report.DescribeOutputBudget(100000);
+
+        Assert.Contains("FinishReason: CONTINUATION", line);
+        Assert.Contains("Long Decode", line);
+        Assert.DoesNotContain("abgeschnitten", line);
+    }
 }

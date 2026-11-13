@@ -90,6 +90,13 @@ public sealed class GenerationLoopOptions {
     /// stop when a per-minute token limit is smaller than the request itself; null when not counted.
     /// </summary>
     public long? RequestInputTokens { get; init; }
+
+    /// <summary>
+    /// Enables Long Decode continuation (<c>FinishReason.Continuation</c> + <c>ContinuationToken</c>) for
+    /// Gemini Hydrogen / Gemini 4 models. Older models keep this <see langword="false"/> to stay on the
+    /// legacy C# text-continue loop untouched.
+    /// </summary>
+    public bool SupportsLongDecode { get; init; }
 }
 
 /// <summary>
@@ -146,15 +153,35 @@ public static class GenerationLoop {
         $"{ContinueBudget.EchoTail(response, echoCharacters)}\n\n" +
         instruction;
 
-    /// <param name="history">The conversation; each continue appends the model turn and the continue prompt to it.</param>
+    /// <summary>
+    /// [AI Context] Clones <paramref name="baseConfig"/> for a single hop. Older models keep SDK
+    /// <c>AutomaticContinuation = false</c> and <c>ContinuationToken = null</c> (pure legacy behavior);
+    /// Hydrogen also sets <c>AutomaticContinuation = false</c> so <see cref="GenerationLoop"/> explicitly
+    /// tracks <paramref name="continuationToken"/> across retries, quotas, and thoughts.
+    /// [Human] Klont die Config für einen Hop (mit ContinuationToken bei Hydrogen, strikt Legacy bei älteren Modellen).
+    /// </summary>
+    public static GenerateContentConfig PrepareHopConfig(GenerateContentConfig baseConfig, string modelName, byte[]? continuationToken) =>
+        ModelCapabilities.SupportsLongDecode(modelName)
+            ? baseConfig with { AutomaticContinuation = false, ContinuationToken = continuationToken }
+            : baseConfig with { AutomaticContinuation = false, ContinuationToken = null };
+
+    /// <param name="history">The conversation; each legacy continue appends the model turn and the continue prompt to it.</param>
     /// <param name="generate">Starts one streamed request over the history as it is at that moment.</param>
+    public static Task<GenerationLoopResult> RunAsync(
+        List<Content> history, Func<List<Content>, IAsyncEnumerable<GenerateContentResponse>> generate, ThoughtLog thoughts, GenerationLoopOptions options) =>
+        RunAsync(history, (h, _) => generate(h), thoughts, options);
+
+    /// <param name="history">The conversation; unchanged across Long Decode <c>ContinuationToken</c> hops, appended only on legacy text-continue turns.</param>
+    /// <param name="generate">Starts one streamed request over the history and optional Long Decode continuation token.</param>
     public static async Task<GenerationLoopResult> RunAsync(
-        List<Content> history, Func<List<Content>, IAsyncEnumerable<GenerateContentResponse>> generate, ThoughtLog thoughts, GenerationLoopOptions options) {
+        List<Content> history, Func<List<Content>, byte[]?, IAsyncEnumerable<GenerateContentResponse>> generate, ThoughtLog thoughts, GenerationLoopOptions options) {
         string fullText = "";
+        string textSinceHistoryTurn = "";
         TokenUsage total = default;
         var budget = new ContinueBudget(options.MaxContinueRequests);
         int emptyAnswerRetries = 0;
         string? continuePrompt = null;
+        byte[]? continuationToken = null;
         var end = GenerationEnd.Cancelled;
 
         using var cancelScope = new ConsoleCancelScope();
@@ -169,13 +196,14 @@ public static class GenerationLoop {
 
             string text = "";
             GroundingMetadata? grounding = null;
+            byte[]? attemptContinuationToken = null;
             var usage = new UsageReport();
             bool callSuccess;
 
             var heartbeat = new StreamHeartbeat(options.SilenceNoticeInterval);
             try {
                 callSuccess = await ApiRetryPolicy.ExecuteStreamWithRetryAsync(
-                    streamFactory: () => WithSilenceTimeout(generate(history), options.FirstChunkTimeout),
+                    streamFactory: () => WithSilenceTimeout(generate(history, continuationToken), options.FirstChunkTimeout),
                     onChunkReceived: chunk => {
                         heartbeat.Touch();
                         string answer = thoughts.Absorb(chunk);
@@ -184,6 +212,7 @@ public static class GenerationLoop {
                         text += answer;
 
                         grounding = ResponseParts.Grounding(chunk) ?? grounding;
+                        attemptContinuationToken = ResponseParts.ContinuationToken(chunk) ?? attemptContinuationToken;
 
                         // Per request, the last chunk carrying usage wins; requests are summed below.
                         usage.Absorb(chunk.UsageMetadata);
@@ -197,6 +226,7 @@ public static class GenerationLoop {
                         heartbeat.Restart();
                         text = "";
                         grounding = null;
+                        attemptContinuationToken = null;
                         usage = new UsageReport();
                         thoughts.DiscardRequest();
                     },
@@ -235,6 +265,38 @@ public static class GenerationLoop {
                 await options.AfterRequestAsync(request);
             }
 
+            bool isContinuationStop = options.SupportsLongDecode
+                && ResponseParts.IsContinuationFinishReason(usage.FinishReason)
+                && attemptContinuationToken is { Length: > 0 };
+
+            if (isContinuationStop) {
+                emptyAnswerRetries = 0;
+                fullText += text;
+                textSinceHistoryTurn += text;
+
+                if (options.IsComplete(text) || options.IsComplete(textSinceHistoryTurn)) {
+                    end = GenerationEnd.Completed;
+                    break;
+                }
+
+                if (!budget.TryContinueContinuation(text, attemptContinuationToken!, out string continuationStopReason)) {
+                    Ui.Warn($"{continuationStopReason} {options.BudgetStopSuffix}");
+                    end = GenerationEnd.BudgetExhausted;
+                    break;
+                }
+
+                int finishedHop = budget.RequestNumber - 1;
+                continuationToken = attemptContinuationToken;
+                continuePrompt = null;
+                Ui.Info($"Long Decode: Hop {finishedHop} am Single-Request-Limit pausiert ({usage.CandidateTokens:N0} Output + {usage.ThoughtTokens:N0} Denk-Tokens, FinishReason: CONTINUATION). Setze nahtlos mit ContinuationToken fort (History unverändert)...", "Long Decode");
+
+                if (!await options.WaitBeforeContinueAsync()) {
+                    end = GenerationEnd.Cancelled;
+                    break;
+                }
+                continue;
+            }
+
             if (options.EmptyAnswerRetries > 0 && string.IsNullOrWhiteSpace(text)) {
                 if (emptyAnswerRetries < options.EmptyAnswerRetries) {
                     emptyAnswerRetries++;
@@ -256,8 +318,9 @@ public static class GenerationLoop {
 
             emptyAnswerRetries = 0;
             fullText += text;
+            textSinceHistoryTurn += text;
 
-            if (options.IsComplete(text)) {
+            if (options.IsComplete(text) || (options.SupportsLongDecode && options.IsComplete(textSinceHistoryTurn))) {
                 end = GenerationEnd.Completed;
                 break;
             }
@@ -268,9 +331,12 @@ public static class GenerationLoop {
                 break;
             }
 
-            continuePrompt = options.BuildContinuePrompt(text);
-            history.Add(new Content { Role = "model", Parts = [new Part { Text = text }] });
+            string anchorText = !string.IsNullOrWhiteSpace(text) ? text : textSinceHistoryTurn;
+            continuePrompt = options.BuildContinuePrompt(anchorText);
+            history.Add(new Content { Role = "model", Parts = [new Part { Text = textSinceHistoryTurn }] });
             history.Add(new Content { Role = "user", Parts = [new Part { Text = continuePrompt }] });
+            continuationToken = null;
+            textSinceHistoryTurn = "";
 
             if (!await options.WaitBeforeContinueAsync()) {
                 end = GenerationEnd.Cancelled;

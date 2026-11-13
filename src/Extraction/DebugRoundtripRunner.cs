@@ -45,7 +45,8 @@ public static class DebugRoundtripRunner {
             Temperature = config.Temperature,
             TopP = config.TopP,
             TopK = config.TopK,
-            MaxOutputTokens = 200
+            MaxOutputTokens = 200,
+            AutomaticContinuation = false
         };
 
         if (systemInstructionParts.Count > 0) {

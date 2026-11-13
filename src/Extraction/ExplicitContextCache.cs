@@ -64,9 +64,9 @@ public sealed class ExplicitContextCache(Client client, VertexAutoExtractionConf
             config.Temperature,
             config.TopP,
             config.TopK,
-            config.MaxOutputTokens,
+            ModelCapabilities.ResolveMaxOutputTokens(config.CurrentModel, config.MaxOutputTokens),
             config.ThinkingBudget,
-            config.ThinkingLevel,
+            ModelCapabilities.ResolveThinkingLevel(config.CurrentModel, config.ThinkingLevel),
             combinedChecksum
         );
 
@@ -96,9 +96,9 @@ public sealed class ExplicitContextCache(Client client, VertexAutoExtractionConf
                 savedState.Temperature = config.Temperature;
                 savedState.TopP = config.TopP;
                 savedState.TopK = config.TopK;
-                savedState.MaxOutputTokens = config.MaxOutputTokens;
+                savedState.MaxOutputTokens = ModelCapabilities.ResolveMaxOutputTokens(config.CurrentModel, config.MaxOutputTokens);
                 savedState.ThinkingBudget = config.ThinkingBudget;
-                savedState.ThinkingLevel = config.ThinkingLevel;
+                savedState.ThinkingLevel = ModelCapabilities.ResolveThinkingLevel(config.CurrentModel, config.ThinkingLevel);
                 savedState.SystemInstructionChecksum = combinedChecksum;
                 savedState.ExpireTimeUtc = DateTime.UtcNow.AddMinutes(config.ContextCachingMinutes);
                 if (created.ExpireTime.HasValue) {

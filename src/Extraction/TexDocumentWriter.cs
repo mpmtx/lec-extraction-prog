@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using LectureExtraction.Configuration;
 using LectureExtraction.Extraction.Model;
+using LectureExtraction.GoogleAi;
 
 namespace LectureExtraction.Extraction;
 
@@ -336,9 +337,10 @@ public static partial class TexDocumentWriter {
         yield return $"Temperature: {generation.Temperature}";
         yield return $"TopP: {generation.TopP}";
         yield return $"TopK: {generation.TopK}";
-        yield return $"MaxOutputTokens: {generation.MaxOutputTokens}";
+        yield return $"MaxOutputTokens: {ModelCapabilities.ResolveMaxOutputTokens(model, generation.MaxOutputTokens)}";
         if (generation.ThinkingBudget.HasValue) yield return $"ThinkingBudget: {generation.ThinkingBudget.Value}";
-        if (!string.IsNullOrEmpty(generation.ThinkingLevel)) yield return $"ThinkingLevel: {generation.ThinkingLevel}";
+        string? effectiveThinkingLevel = ModelCapabilities.ResolveThinkingLevel(model, generation.ThinkingLevel);
+        if (!string.IsNullOrEmpty(effectiveThinkingLevel)) yield return $"ThinkingLevel: {effectiveThinkingLevel}";
     }
 
     /// <summary>

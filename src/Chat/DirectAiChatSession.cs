@@ -285,7 +285,7 @@ public class DirectAiChatSession {
         Ui.Detail("🌡️  set temp [wert]         -> Ändert die Temperatur für die nächste Antwort (z.B. set temp 0.5)");
         Ui.Detail("🔢 set tokens [wert]       -> Ändert das MaxOutputTokens-Limit dynamisch (z.B. set tokens 8192)");
         Ui.Detail("🧠 set thinking-budget [w] -> Setzt das Thinking Budget für Gemini 2.5 (z.B. 4096)");
-        Ui.Detail("🧠 set thinking-level [l]  -> Setzt das Thinking Level für Gemini 3.x (z.B. HIGH)");
+        Ui.Detail("🧠 set thinking-level [l]  -> Setzt das Thinking Level für Gemini 3.x/4 (z.B. HIGH, XHIGH)");
         Ui.Detail("🔍 set grounding [on/off]  -> Aktiviert/Deaktiviert Google Search Grounding (Websuche)");
         Ui.Detail("🤖 set model [name/index]  -> Ändert das aktive Modell mitten im Chat");
         if (_canChangeApiKeyProfile) {
@@ -324,7 +324,10 @@ public class DirectAiChatSession {
 
             case ChatCommandKind.SetMaxTokens:
                 AIParams.MaxOutputTokens = command.Integer;
-                Ui.Info($"MaxOutputTokens für die nächste(n) Antwort(en) auf {AIParams.MaxOutputTokens} gesetzt.");
+                int effectiveTokens = ModelCapabilities.ResolveMaxOutputTokens(_activeModel, AIParams.MaxOutputTokens);
+                Ui.Info(effectiveTokens == AIParams.MaxOutputTokens
+                    ? $"MaxOutputTokens für die nächste(n) Antwort(en) auf {AIParams.MaxOutputTokens} gesetzt."
+                    : $"MaxOutputTokens auf {AIParams.MaxOutputTokens} gesetzt (effektiv {effectiveTokens} für älteres Modell '{_activeModel}').");
                 return true;
 
             case ChatCommandKind.SetThinkingBudget:
@@ -334,7 +337,10 @@ public class DirectAiChatSession {
 
             case ChatCommandKind.SetThinkingLevel:
                 AIParams.ThinkingLevel = command.Text;
-                Ui.Info($"ThinkingLevel für die nächste(n) Antwort(en) auf '{AIParams.ThinkingLevel}' gesetzt (relevant für Gemini 3.x Modelle).");
+                string? effectiveLevel = ModelCapabilities.ResolveThinkingLevel(_activeModel, AIParams.ThinkingLevel);
+                Ui.Info(string.Equals(effectiveLevel, AIParams.ThinkingLevel, StringComparison.OrdinalIgnoreCase)
+                    ? $"ThinkingLevel für die nächste(n) Antwort(en) auf '{AIParams.ThinkingLevel}' gesetzt (relevant für Gemini 3.x/4 Modelle)."
+                    : $"ThinkingLevel auf '{AIParams.ThinkingLevel}' gesetzt (effektiv '{effectiveLevel}' für älteres Modell '{_activeModel}').");
                 return true;
 
             case ChatCommandKind.SetGrounding:
@@ -415,22 +421,15 @@ public class DirectAiChatSession {
             Temperature = AIParams.Temperature,
             TopP = AIParams.TopP,
             TopK = AIParams.TopK,
-            MaxOutputTokens = AIParams.MaxOutputTokens
+            MaxOutputTokens = ModelCapabilities.ResolveMaxOutputTokens(selectedModel, AIParams.MaxOutputTokens),
+            AutomaticContinuation = ModelCapabilities.ResolveSdkAutomaticContinuation(selectedModel, enableForLongDecode: true)
         };
 
         if (AIParams.UseGoogleSearch) {
             config.Tools = [new Tool { GoogleSearch = new GoogleSearch() }];
         }
 
-        if (ModelCapabilities.SupportsThinking(selectedModel)) {
-            bool isGemini25 = selectedModel.Contains("2.5", StringComparison.OrdinalIgnoreCase);
-            if (!isGemini25 && !string.IsNullOrEmpty(AIParams.ThinkingLevel)) {
-                config.ThinkingConfig = new ThinkingConfig { ThinkingLevel = AIParams.ThinkingLevel };
-            }
-            else if (AIParams.ThinkingBudget.HasValue) {
-                config.ThinkingConfig = new ThinkingConfig { ThinkingBudget = AIParams.ThinkingBudget };
-            }
-        }
+        config.ThinkingConfig = ThinkingConfigFactory.Build(selectedModel, AIParams.ThinkingBudget, AIParams.ThinkingLevel);
 
         var apiContents = history;
 

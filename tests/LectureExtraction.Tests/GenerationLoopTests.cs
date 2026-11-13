@@ -299,15 +299,142 @@ public class GenerationLoopTests : IDisposable {
         Assert.Equal("[IMPORTANT] Your response was cut short. Your last output ended with:\n\n...\nxxxxxxxEND\n\nGo on.", prompt);
     }
 
+    [Fact]
+    public async Task Long_decode_resumes_thinking_only_continuation_without_empty_answer_retry_or_history_mutation() {
+        byte[] hop1Token = [10, 20, 30];
+        var history = new List<Content> { UserTurn("refine speech") };
+        var seenTokens = new List<byte[]?>();
+        var reported = new List<GenerationRequest>();
+        var streams = new Queue<IAsyncEnumerable<GenerateContentResponse>>([
+            Stream([
+                Thought("deep reasoning"),
+                ContinuationChunk("", hop1Token),
+                Usage(177973, 3, 0, 65533)
+            ]),
+            Stream([
+                Answer($"refined output\n{Marker}"),
+                FinishChunk(FinishReason.Stop),
+                Usage(177973, 200, 0, 5000)
+            ]),
+        ]);
+
+        var result = await GenerationLoop.RunAsync(history,
+            (h, token) => {
+                Assert.Single(h);
+                seenTokens.Add(token);
+                return streams.Dequeue();
+            },
+            ThoughtLog.Inert(),
+            Options(o => o with { EmptyAnswerRetries = 3, SupportsLongDecode = true, AfterRequestAsync = r => { reported.Add(r); return Task.CompletedTask; } }));
+
+        Assert.Equal($"refined output\n{Marker}", result.Text);
+        Assert.Equal(GenerationEnd.Completed, result.End);
+        Assert.Equal(new TokenUsageSnapshot(355946, 203, 0, 70533, 2), Snapshot(result));
+        Assert.Single(history);
+        Assert.Equal(2, seenTokens.Count);
+        Assert.Null(seenTokens[0]);
+        Assert.Equal(hop1Token, seenTokens[1]);
+        Assert.All(reported, r => Assert.Null(r.ContinuePrompt));
+        Assert.Contains("Long Decode: Hop 1", _console.Output);
+        Assert.DoesNotContain("komplett leere Antwort", _console.Output);
+    }
+
+    [Fact]
+    public async Task Long_decode_keeps_continuation_token_across_transient_503_retry_on_hop2() {
+        byte[] hop1Token = [42, 43];
+        var history = new List<Content> { UserTurn("merge parts") };
+        var seenTokens = new List<byte[]?>();
+        var streams = new Queue<IAsyncEnumerable<GenerateContentResponse>>([
+            Stream([
+                Answer("first half "),
+                ContinuationChunk("", hop1Token),
+                Usage(200000, 10000, 0, 55536)
+            ]),
+            Stream([], new ServerError("high demand", 503, "UNAVAILABLE")),
+            Stream([
+                Answer($"second half\n{Marker}"),
+                FinishChunk(FinishReason.Stop),
+                Usage(200000, 8000, 0, 4000)
+            ]),
+        ]);
+
+        var result = await GenerationLoop.RunAsync(history,
+            (_, token) => { seenTokens.Add(token); return streams.Dequeue(); },
+            ThoughtLog.Inert(),
+            Options(o => o with { SupportsLongDecode = true }));
+
+        Assert.Equal($"first half second half\n{Marker}", result.Text);
+        Assert.Equal(GenerationEnd.Completed, result.End);
+        Assert.Single(history);
+        Assert.Equal(new byte[]?[] { null, hop1Token, hop1Token }, seenTokens);
+    }
+
+    [Fact]
+    public async Task Older_models_ignore_continuation_and_stay_on_legacy_text_continue_path() {
+        byte[] tokenFromChunk = [7, 8, 9];
+        var history = new List<Content> { UserTurn("transcribe") };
+        var seenTokens = new List<byte[]?>();
+        var streams = new Queue<IAsyncEnumerable<GenerateContentResponse>>([
+            Stream([
+                Answer("first half"),
+                ContinuationChunk("", tokenFromChunk),
+                Usage(100, 10, 0, 5)
+            ]),
+            Stream([
+                Answer($"second half\n{Marker}"),
+                FinishChunk(FinishReason.Stop),
+                Usage(120, 15, 0, 2)
+            ]),
+        ]);
+
+        var result = await GenerationLoop.RunAsync(history,
+            (_, token) => { seenTokens.Add(token); return streams.Dequeue(); },
+            ThoughtLog.Inert(),
+            Options(o => o with { SupportsLongDecode = false }));
+
+        Assert.Equal($"first halfsecond half\n{Marker}", result.Text);
+        Assert.Equal(GenerationEnd.Completed, result.End);
+        Assert.Equal(new byte[]?[] { null, null }, seenTokens);
+        Assert.Equal(3, history.Count);
+        Assert.Equal("continue after: first half", history[2].Parts![0].Text);
+    }
+
+    [Fact]
+    public async Task Long_decode_recognizes_completion_marker_split_across_hop_seam() {
+        byte[] hop1Token = [99];
+        var history = new List<Content> { UserTurn("refine") };
+        var streams = new Queue<IAsyncEnumerable<GenerateContentResponse>>([
+            Stream([
+                Answer("body\n% [SYSTEM] Refin"),
+                ContinuationChunk("", hop1Token),
+                Usage(100, 20, 0, 5)
+            ]),
+            Stream([
+                Answer("ement complete"),
+                FinishChunk(FinishReason.Stop),
+                Usage(100, 5, 0, 1)
+            ]),
+        ]);
+
+        var result = await GenerationLoop.RunAsync(history,
+            (_, _) => streams.Dequeue(),
+            ThoughtLog.Inert(),
+            Options(o => o with { SupportsLongDecode = true }));
+
+        Assert.Equal($"body\n{Marker}", result.Text);
+        Assert.Equal(GenerationEnd.Completed, result.End);
+        Assert.Equal(2, result.Usage.Requests);
+    }
+
     private ThoughtLog EnabledThoughts() =>
         new(new ThoughtSummaryConfig { Enabled = true, ToConsole = false, ToSeparateFile = true }, "final", "Final", "m", Path.Combine(_folder, "out.tex"), null);
 
     /// <summary>A record copy of the options, so a test can change one member with <c>with</c>.</summary>
     private sealed record TestOptions(int MaxContinueRequests, Func<Task<bool>> WaitBeforeContinueAsync, int EmptyAnswerRetries,
-        Func<GenerationRequest, Task>? AfterRequestAsync);
+        Func<GenerationRequest, Task>? AfterRequestAsync, bool SupportsLongDecode);
 
     private static GenerationLoopOptions Options(Func<TestOptions, TestOptions>? change = null) {
-        var o = new TestOptions(10, () => Task.FromResult(true), 0, null);
+        var o = new TestOptions(10, () => Task.FromResult(true), 0, null, false);
         if (change != null) o = change(o);
         return new GenerationLoopOptions {
             MaxContinueRequests = o.MaxContinueRequests,
@@ -320,6 +447,7 @@ public class GenerationLoopTests : IDisposable {
             EmptyAnswerRetries = o.EmptyAnswerRetries,
             EmptyAnswerRetryDelay = TimeSpan.Zero,
             AfterRequestAsync = o.AfterRequestAsync,
+            SupportsLongDecode = o.SupportsLongDecode,
         };
     }
 
@@ -333,6 +461,20 @@ public class GenerationLoopTests : IDisposable {
     private static GenerateContentResponse Answer(string text) => ResponsePartsTests.Chunk((text, false));
 
     private static GenerateContentResponse Thought(string text) => ResponsePartsTests.Chunk((text, true));
+
+    private static GenerateContentResponse ContinuationChunk(string answerText, byte[] continuationToken) => new() {
+        Candidates = [
+            new Candidate {
+                Content = string.IsNullOrEmpty(answerText) ? null : new Content { Parts = [new Part { Text = answerText }] },
+                FinishReason = FinishReason.Continuation,
+                ContinuationToken = continuationToken,
+            }
+        ]
+    };
+
+    private static GenerateContentResponse FinishChunk(FinishReason reason) => new() {
+        Candidates = [new Candidate { FinishReason = reason }]
+    };
 
     private static GenerateContentResponse Usage(int prompt, int output, int cached, int thoughts) => new() {
         UsageMetadata = new GenerateContentResponseUsageMetadata {

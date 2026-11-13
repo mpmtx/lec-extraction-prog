@@ -207,7 +207,8 @@ public partial class AutoExtractionSession {
             Temperature = _config.Temperature,
             TopP = _config.TopP,
             TopK = _config.TopK,
-            MaxOutputTokens = _config.MaxOutputTokens
+            MaxOutputTokens = ModelCapabilities.ResolveMaxOutputTokens(_config.CurrentModel, _config.MaxOutputTokens),
+            AutomaticContinuation = false
         };
 
         var sysParts = GetValidSystemInstructionParts();
@@ -222,7 +223,7 @@ public partial class AutoExtractionSession {
         // [Human] Gleiche Thinking-Konfiguration wie Part 1+, damit der Warmup-Prefix gecacht wird.
         if (ModelCapabilities.SupportsThinking(_config.CurrentModel)) {
             if (_config.DisableThinkingDuringWarmUp) {
-                requestConfig.ThinkingConfig = new ThinkingConfig { ThinkingBudget = 0 };
+                requestConfig.ThinkingConfig = ThinkingConfigFactory.BuildForWarmupDisabled(_config.CurrentModel);
                 Ui.Detail("Handshake läuft ohne Thinking (DisableThinkingDuringWarmUp = true).", "Cache-Warming");
             } else {
                 // IncludeThoughts too, for the same reason; the handshake's own thoughts are dropped below.

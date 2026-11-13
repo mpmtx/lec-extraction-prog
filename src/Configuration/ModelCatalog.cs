@@ -7,6 +7,9 @@ namespace LectureExtraction.Configuration;
 /// [Human] Die Standard-Modellliste, an einer Stelle statt in jeder Konfigurationsklasse.
 /// </summary>
 public static class ModelCatalog {
-    /// <summary>Newest first. A copy, so a caller that changes it cannot change the default.</summary>
-    public static string[] Default => ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3-flash-preview"];
+    /// <summary>
+    /// Default model catalog (keeps gemini-3.8-flash at index 0 as default, with gemini-4-hydrogen and older
+    /// Flash releases available). Returns a copy so callers cannot mutate the default.
+    /// </summary>
+    public static string[] Default => ["gemini-3.8-flash", "gemini-4-hydrogen", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3-flash-preview"];
 }

@@ -104,7 +104,8 @@ public partial class AutoExtractionSession {
             Temperature = _config.Temperature,
             TopP = _config.TopP,
             TopK = _config.TopK,
-            MaxOutputTokens = _config.MaxOutputTokens
+            MaxOutputTokens = ModelCapabilities.ResolveMaxOutputTokens(_config.CurrentModel, _config.MaxOutputTokens),
+            AutomaticContinuation = false
         };
 
         // Vertex's explicit cache already holds the system instruction; the two are mutually exclusive.
@@ -308,14 +309,16 @@ public partial class AutoExtractionSession {
 
     private async Task<SegmentTranscript> StreamAndCollectAsync(GenerateContentConfig requestConfig, List<Content> history, int partNumber, string originalFileName, string partFile, string logContext, ThoughtLog thoughts, int? promptTokens) {
         var result = await GenerationLoop.RunAsync(history,
-            h => {
+            (h, continuationToken) => {
                 ApiKeyQuotaTracker.RecordClientRequest(_client, _config.CurrentModel, $"Part {partNumber}: {Path.GetFileNameWithoutExtension(originalFileName)}");
-                return _client.Models.GenerateContentStreamAsync(_config.CurrentModel, h, requestConfig);
+                var hopConfig = GenerationLoop.PrepareHopConfig(requestConfig, _config.CurrentModel, continuationToken);
+                return _client.Models.GenerateContentStreamAsync(_config.CurrentModel, h, hopConfig);
             },
             thoughts,
             new GenerationLoopOptions {
                 MaxContinueRequests = _config.MaxContinueRequests,
                 RequestInputTokens = promptTokens,
+                SupportsLongDecode = ModelCapabilities.SupportsLongDecode(_config.CurrentModel),
                 FirstChunkTimeout = AppConfig.FirstChunkTimeout,
                 AnnounceRequest = (request, max) =>
                     Ui.Step($"Sende Anfrage für Part {partNumber} an {_backend.ProviderName} ({_config.CurrentModel}) (Request {request}/{max})..."),

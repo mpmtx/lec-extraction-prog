@@ -64,7 +64,8 @@ public partial class VertexAutoExtractionSession {
             Temperature = _config.Temperature,
             TopP = _config.TopP,
             TopK = _config.TopK,
-            MaxOutputTokens = 100
+            MaxOutputTokens = 100,
+            AutomaticContinuation = false
         };
 
         var sysParts = new List<Part>();

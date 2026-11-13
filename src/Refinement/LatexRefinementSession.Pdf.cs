@@ -423,7 +423,8 @@ public partial class LatexRefinementSession {
             Temperature = backendParams.Temperature,
             TopP = backendParams.TopP,
             TopK = backendParams.TopK,
-            MaxOutputTokens = backendParams.MaxOutputTokens
+            MaxOutputTokens = ModelCapabilities.ResolveMaxOutputTokens(backendParams.CurrentModel, backendParams.MaxOutputTokens),
+            AutomaticContinuation = false
         };
 
         var thoughtSettings = _config.PdfCompilation?.ThoughtSummaries;
@@ -516,13 +517,15 @@ public partial class LatexRefinementSession {
         int retryBackoff = fixDelay > 0 ? fixDelay : 130;
 
         var result = await GenerationLoop.RunAsync(history,
-            h => {
+            (h, continuationToken) => {
                 ApiKeyQuotaTracker.RecordClientRequest(_client, backendParams.CurrentModel, outputFileName);
-                return _client.Models.GenerateContentStreamAsync(backendParams.CurrentModel, h, requestConfig);
+                var hopConfig = GenerationLoop.PrepareHopConfig(requestConfig, backendParams.CurrentModel, continuationToken);
+                return _client.Models.GenerateContentStreamAsync(backendParams.CurrentModel, h, hopConfig);
             },
             thoughts,
             new GenerationLoopOptions {
                 MaxContinueRequests = _config.Step3LastRefinement?.MaxContinueRequests ?? 10,
+                SupportsLongDecode = ModelCapabilities.SupportsLongDecode(backendParams.CurrentModel),
                 BeforeRequestAsync = () => WaitOutRateLimitAsync(fixDelay,
                     "vor dem PDF-Fix-Request...", "Warte auf Rate-Limits (Token-Refill Schutz vor PDF-Fix-Request)..."),
                 AnnounceRequest = (request, max) =>

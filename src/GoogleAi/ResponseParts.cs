@@ -33,9 +33,17 @@ public static class ResponseParts {
         return (answer.ToString(), thought.ToString());
     }
 
-    /// <summary>The chunk's finish reason (STOP, MAX_TOKENS...), or null - also for an empty candidate list.</summary>
+    /// <summary>The chunk's finish reason (STOP, MAX_TOKENS, CONTINUATION...), or null - also for an empty candidate list.</summary>
     public static string? FinishReason(GenerateContentResponse? chunk) =>
         FirstCandidate(chunk)?.FinishReason?.ToString();
+
+    /// <summary>The chunk's opaque Long Decode continuation token, or null when absent/empty.</summary>
+    public static byte[]? ContinuationToken(GenerateContentResponse? chunk) =>
+        FirstCandidate(chunk)?.ContinuationToken is { Length: > 0 } token ? token : null;
+
+    /// <summary>True when <paramref name="finishReason"/> equals <c>CONTINUATION</c>.</summary>
+    public static bool IsContinuationFinishReason(string? finishReason) =>
+        string.Equals(finishReason, Google.GenAI.Types.FinishReason.Continuation.Value, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The chunk's grounding (Google Search sources), or null - also for an empty candidate list.</summary>
     public static GroundingMetadata? Grounding(GenerateContentResponse? chunk) =>

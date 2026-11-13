@@ -73,7 +73,9 @@ public sealed class UsageReport {
         string reason = FinishReason ?? "nicht gemeldet";
         string verdict = string.Equals(FinishReason, "MAX_TOKENS", StringComparison.OrdinalIgnoreCase)
             ? $" - Antwort durch das Output-Limit abgeschnitten (Denk-Tokens davon: {ThoughtTokens:N0})"
-            : "";
+            : ResponseParts.IsContinuationFinishReason(FinishReason)
+                ? $" - Single-Request-Limit für Long Decode erreicht, setze mit ContinuationToken fort (Denk-Tokens davon: {ThoughtTokens:N0})"
+                : "";
         return $"[Output-Budget] {CandidateTokens:N0} Output + {ThoughtTokens:N0} Denk-Tokens = {used:N0}{limit} | FinishReason: {reason}{verdict}";
     }
 

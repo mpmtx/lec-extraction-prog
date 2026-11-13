@@ -23,7 +23,7 @@ namespace LectureExtraction.Chat;
 /// zwei Befehle dauerhaft kaputt, weil die Argument-Position von Hand gezählt war.
 /// </summary>
 public static partial class ChatCommandParser {
-    private static readonly string[] ValidThinkingLevels = ["MINIMAL", "LOW", "MEDIUM", "HIGH"];
+    private static readonly string[] ValidThinkingLevels = ["MINIMAL", "LOW", "MEDIUM", "HIGH", "XHIGH"];
 
     public static ChatCommand Parse(string? input) {
         if (string.IsNullOrWhiteSpace(input)) {
@@ -67,7 +67,7 @@ public static partial class ChatCommandParser {
             string upper = level.ToUpperInvariant();
             return ValidThinkingLevels.Contains(upper)
                 ? new ChatCommand(ChatCommandKind.SetThinkingLevel) { Text = upper }
-                : new ChatCommand(ChatCommandKind.SetThinkingLevel) { Error = $"Ungültiger Wert für ThinkingLevel '{upper}'. Gültige Werte sind: MINIMAL, LOW, MEDIUM, HIGH." };
+                : new ChatCommand(ChatCommandKind.SetThinkingLevel) { Error = $"Ungültiger Wert für ThinkingLevel '{upper}'. Gültige Werte sind: MINIMAL, LOW, MEDIUM, HIGH, XHIGH." };
         }
 
         if (TryTakeArgument(text, "set grounding ", out string grounding)) {

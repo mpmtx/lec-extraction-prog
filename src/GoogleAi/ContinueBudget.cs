@@ -37,6 +37,7 @@ public sealed class ContinueBudget {
 
     private readonly int _maxWithoutProgress;
     private string _previousTail = "";
+    private byte[]? _previousContinuationToken;
 
     public ContinueBudget(int maxTotal, int maxWithoutProgress = 3) {
         MaxTotal = Math.Max(1, maxTotal);
@@ -59,6 +60,27 @@ public sealed class ContinueBudget {
         string tail = response.Length > TailLength ? response[^TailLength..] : response;
         bool madeProgress = !string.IsNullOrWhiteSpace(response) && tail != _previousTail;
         _previousTail = tail;
+        _previousContinuationToken = null;
+        return TryAdvance(madeProgress, out stopReason);
+    }
+
+    /// <summary>
+    /// [AI Context] Records a Long Decode hop that stopped with <c>FinishReason.Continuation</c>.
+    /// When the hop spent all 65,536 tokens on reasoning (empty visible text, fresh token),
+    /// a changed <paramref name="continuationToken"/> still counts as forward progress.
+    /// [Human] Zählt einen Long-Decode-Hop auch bei reinen Denk-Tokens als Fortschritt, sofern ein neuer Token kam.
+    /// </summary>
+    public bool TryContinueContinuation(string response, byte[] continuationToken, out string stopReason) {
+        string tail = response.Length > TailLength ? response[^TailLength..] : response;
+        bool textAdvanced = !string.IsNullOrWhiteSpace(response) && tail != _previousTail;
+        bool tokenAdvanced = continuationToken.Length > 0 &&
+                             (_previousContinuationToken == null || !continuationToken.AsSpan().SequenceEqual(_previousContinuationToken));
+        _previousTail = tail;
+        _previousContinuationToken = continuationToken;
+        return TryAdvance(textAdvanced || tokenAdvanced, out stopReason);
+    }
+
+    private bool TryAdvance(bool madeProgress, out string stopReason) {
         RequestsWithoutProgress = madeProgress ? 0 : RequestsWithoutProgress + 1;
 
         if (RequestNumber >= MaxTotal) {

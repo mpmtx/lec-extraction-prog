@@ -27,18 +27,30 @@ public static class ThinkingConfigFactory {
 
         ThinkingConfig? config = null;
         bool isGemini25 = model.Contains("2.5", StringComparison.OrdinalIgnoreCase);
-        if (!isGemini25 && !string.IsNullOrEmpty(thinkingLevel)) {
-            config = new ThinkingConfig { ThinkingLevel = thinkingLevel };
+        string? effectiveLevel = ModelCapabilities.ResolveThinkingLevel(model, thinkingLevel);
+        if (!isGemini25 && !string.IsNullOrWhiteSpace(effectiveLevel)) {
+            config = new() { ThinkingLevel = effectiveLevel };
         }
-        else if (thinkingBudget.HasValue) {
-            config = new ThinkingConfig { ThinkingBudget = Math.Min(thinkingBudget.Value, MaxThinkingBudget) };
+        else if (thinkingBudget.HasValue && ModelCapabilities.SupportsThinkingBudget(model)) {
+            config = new() { ThinkingBudget = Math.Min(thinkingBudget.Value, MaxThinkingBudget) };
         }
 
         if (includeThoughts) {
-            config ??= new ThinkingConfig();
+            config ??= new();
             config.IncludeThoughts = true;
         }
 
         return config;
     }
+
+    /// <summary>
+    /// [AI Context] Builds the minimal-thinking config used when <c>DisableThinkingDuringWarmUp</c> is enabled.
+    /// Gemini 2.5/3.x use <c>ThinkingBudget = 0</c>, whereas Gemini 4 / Hydrogen rejects <c>thinking_budget</c> and
+    /// <c>MINIMAL</c>, so it falls back to its minimum supported level (<c>LOW</c>).
+    /// [Human] Erstellt die Warmup-Konfiguration mit minimalem Thinking (Budget 0 bzw. LOW bei Hydrogen).
+    /// </summary>
+    public static ThinkingConfig BuildForWarmupDisabled(string model) =>
+        ModelCapabilities.SupportsXHighThinking(model)
+            ? new() { ThinkingLevel = "LOW" }
+            : new() { ThinkingBudget = 0 };
 }

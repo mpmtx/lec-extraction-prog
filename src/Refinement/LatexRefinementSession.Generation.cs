@@ -60,9 +60,9 @@ public partial class LatexRefinementSession {
                 backendParams.Temperature,
                 backendParams.TopP,
                 backendParams.TopK,
-                backendParams.MaxOutputTokens,
+                ModelCapabilities.ResolveMaxOutputTokens(backendParams.CurrentModel, backendParams.MaxOutputTokens),
                 backendParams.ThinkingBudget,
-                backendParams.ThinkingLevel,
+                ModelCapabilities.ResolveThinkingLevel(backendParams.CurrentModel, backendParams.ThinkingLevel),
                 checksum
             );
             if (match && await ContextCacheStateManager.IsValidRemoteAsync(_client, savedState.CacheName!)) {
@@ -126,7 +126,8 @@ public partial class LatexRefinementSession {
             Temperature = backendParams.Temperature,
             TopP = backendParams.TopP,
             TopK = backendParams.TopK,
-            MaxOutputTokens = backendParams.MaxOutputTokens
+            MaxOutputTokens = ModelCapabilities.ResolveMaxOutputTokens(backendParams.CurrentModel, backendParams.MaxOutputTokens),
+            AutomaticContinuation = false
         };
         if (!string.IsNullOrEmpty(cacheName)) {
             requestConfig.CachedContent = cacheName;
@@ -215,13 +216,15 @@ public partial class LatexRefinementSession {
         int retryBackoff = rateLimitDelay > 0 ? rateLimitDelay : 130;
 
         var result = await GenerationLoop.RunAsync(history,
-            h => {
+            (h, continuationToken) => {
                 ApiKeyQuotaTracker.RecordClientRequest(_client, backendParams.CurrentModel, outputFileName);
-                return _client.Models.GenerateContentStreamAsync(backendParams.CurrentModel, h, requestConfig);
+                var hopConfig = GenerationLoop.PrepareHopConfig(requestConfig, backendParams.CurrentModel, continuationToken);
+                return _client.Models.GenerateContentStreamAsync(backendParams.CurrentModel, h, hopConfig);
             },
             thoughts,
             new GenerationLoopOptions {
                 MaxContinueRequests = stepConfig.MaxContinueRequests,
+                SupportsLongDecode = ModelCapabilities.SupportsLongDecode(backendParams.CurrentModel),
                 BeforeRequestAsync = () => WaitOutRateLimitAsync(rateLimitDelay,
                     "vor dem nächsten API-Aufruf...", "Warte auf Rate-Limits (Token-Refill Schutz vor API-Aufruf)..."),
                 AnnounceRequest = (request, max) =>
@@ -243,7 +246,7 @@ public partial class LatexRefinementSession {
                     // IMPORTANT: "Gecacht"/"Frisch" come from Google's cache figure, which is unreliable (hit or miss; UsageReport.CachedTokens).
                     Ui.Info(usage.Describe($"[Request {request.RequestNumber}] Total Prompt: {usage.PromptTokens:N0} | Gecacht: {usage.CachedTokens:N0} | Output: {usage.CandidateTokens:N0}", tag: "").TrimStart(), "Tokens");
                     if (usage.WasReported) {
-                        Ui.Info(usage.DescribeOutputBudget(backendParams.MaxOutputTokens), "Tokens");
+                        Ui.Info(usage.DescribeOutputBudget(ModelCapabilities.ResolveMaxOutputTokens(backendParams.CurrentModel, backendParams.MaxOutputTokens)), "Tokens");
                     }
                 },
                 EmptyAnswerRetries = 3,
@@ -318,9 +321,9 @@ public partial class LatexRefinementSession {
                     Temperature = backendParams.Temperature,
                     TopP = backendParams.TopP,
                     TopK = backendParams.TopK,
-                    MaxOutputTokens = backendParams.MaxOutputTokens,
+                    MaxOutputTokens = ModelCapabilities.ResolveMaxOutputTokens(backendParams.CurrentModel, backendParams.MaxOutputTokens),
                     ThinkingBudget = backendParams.ThinkingBudget,
-                    ThinkingLevel = backendParams.ThinkingLevel,
+                    ThinkingLevel = ModelCapabilities.ResolveThinkingLevel(backendParams.CurrentModel, backendParams.ThinkingLevel),
                     SystemInstructionChecksum = checksum,
                     ExpireTimeUtc = DateTime.UtcNow.AddMinutes(backendParams.ContextCachingMinutes)
                 };
