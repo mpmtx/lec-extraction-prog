@@ -34,7 +34,9 @@ public static class FinishCommand {
     public static Command Build() {
         var command = new Command("finish", "Continue every started lecture from where it stopped, through to the PDF. Paid; --dry-run shows the commands it would run.") {
             StatusCommand.Video, StatusCommand.Folder, Source, Limit, RunCommand.CleanTmp,
-            ExtractionOptions.Profile, ExtractionOptions.Model, ThoughtOptions.Thoughts
+            ExtractionOptions.Profile, ExtractionOptions.Model,
+            ExtractionOptions.MaxOutputTokens, ExtractionOptions.ThinkingLevel,
+            ThoughtOptions.Thoughts
         };
 
         command.SetAction(async (parseResult, cancellationToken) => {
@@ -230,6 +232,8 @@ public static class FinishCommand {
         }
         Add("--profile", parseResult.GetValue(ExtractionOptions.Profile));
         Add("--model", parseResult.GetValue(ExtractionOptions.Model));
+        Add("--max-output-tokens", parseResult.GetValue(ExtractionOptions.MaxOutputTokens)?.ToString());
+        Add("--thinking-level", parseResult.GetValue(ExtractionOptions.ThinkingLevel));
         Add("--thoughts", parseResult.GetValue(ThoughtOptions.Thoughts));
         Add("--config-dir", parseResult.GetValue(CliOptions.ConfigDir));
         if (parseResult.GetValue(CliOptions.Yes)) args.Add("--yes");

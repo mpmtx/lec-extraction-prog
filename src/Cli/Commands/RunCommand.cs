@@ -40,6 +40,7 @@ public static class RunCommand {
             ExtractionOptions.Speed, ExtractionOptions.Preset,
             ExtractionOptions.Model, ExtractionOptions.Profile,
             ExtractionOptions.VideoFps, ExtractionOptions.SkipTokenCounting, ExtractionOptions.FileActivationDelay,
+            ExtractionOptions.MaxOutputTokens, ExtractionOptions.ThinkingLevel,
             ThoughtOptions.Thoughts
         };
 
@@ -165,6 +166,23 @@ public static class RunCommand {
             foreach (var step in new[] { refinementConfig.Step1MergeAndTimestamp, refinementConfig.Step2SpeechRefinement, refinementConfig.Step3LastRefinement }) {
                 if (step != null) {
                     (refinementConfig.UseVertex ? step.Vertex : step.AiStudio).CurrentModel = modelToUse;
+                }
+            }
+        }
+
+        if (parseResult.GetValue(ExtractionOptions.MaxOutputTokens) is int maxOutputTokens && maxOutputTokens > 0) {
+            foreach (var step in new[] { refinementConfig.Step1MergeAndTimestamp, refinementConfig.Step2SpeechRefinement, refinementConfig.Step3LastRefinement }) {
+                if (step != null) {
+                    (refinementConfig.UseVertex ? step.Vertex : step.AiStudio).MaxOutputTokens = maxOutputTokens;
+                }
+            }
+        }
+
+        if (parseResult.GetValue(ExtractionOptions.ThinkingLevel) is string thinkingLevel && !string.IsNullOrWhiteSpace(thinkingLevel)) {
+            string normalized = thinkingLevel.Trim().ToUpperInvariant();
+            foreach (var step in new[] { refinementConfig.Step1MergeAndTimestamp, refinementConfig.Step2SpeechRefinement, refinementConfig.Step3LastRefinement }) {
+                if (step != null) {
+                    (refinementConfig.UseVertex ? step.Vertex : step.AiStudio).ThinkingLevel = normalized;
                 }
             }
         }

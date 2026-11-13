@@ -44,7 +44,7 @@ public static class RefineCommands {
 
     public static Command BuildRefine() {
         var group = new Command("refine", "LaTeX refinement steps 1-3 over an existing .tex.");
-        var run = new Command("run", "Merge, polish and validate a .tex file.") { Tex, Step, ThroughEnd, Audio, ExtractionOptions.Overlap, ExtractionOptions.Profile, ExtractionOptions.Model, ThoughtOptions.Thoughts };
+        var run = new Command("run", "Merge, polish and validate a .tex file.") { Tex, Step, ThroughEnd, Audio, ExtractionOptions.Overlap, ExtractionOptions.Profile, ExtractionOptions.Model, ExtractionOptions.MaxOutputTokens, ExtractionOptions.ThinkingLevel, ThoughtOptions.Thoughts };
 
         run.SetAction(async (parseResult, _) => {
             var context = CliOptions.ReadContext(parseResult);
@@ -196,6 +196,19 @@ public static class RefineCommands {
         if (parseResult.GetValue(ExtractionOptions.Model) is string model && !string.IsNullOrWhiteSpace(model)) {
             foreach (var step in new[] { config.Step1MergeAndTimestamp, config.Step2SpeechRefinement, config.Step3LastRefinement }) {
                 (config.UseVertex ? step.Vertex : step.AiStudio).CurrentModel = model;
+            }
+        }
+
+        if (parseResult.GetValue(ExtractionOptions.MaxOutputTokens) is int maxOutputTokens && maxOutputTokens > 0) {
+            foreach (var step in new[] { config.Step1MergeAndTimestamp, config.Step2SpeechRefinement, config.Step3LastRefinement }) {
+                (config.UseVertex ? step.Vertex : step.AiStudio).MaxOutputTokens = maxOutputTokens;
+            }
+        }
+
+        if (parseResult.GetValue(ExtractionOptions.ThinkingLevel) is string thinkingLevel && !string.IsNullOrWhiteSpace(thinkingLevel)) {
+            string normalized = thinkingLevel.Trim().ToUpperInvariant();
+            foreach (var step in new[] { config.Step1MergeAndTimestamp, config.Step2SpeechRefinement, config.Step3LastRefinement }) {
+                (config.UseVertex ? step.Vertex : step.AiStudio).ThinkingLevel = normalized;
             }
         }
 

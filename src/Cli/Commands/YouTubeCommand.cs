@@ -41,6 +41,7 @@ public static partial class YouTubeCommand {
             Url, Duration, Name, Fragments,
             ExtractionOptions.Out, ExtractionOptions.Overlap,
             ExtractionOptions.Model, ExtractionOptions.Profile,
+            ExtractionOptions.MaxOutputTokens, ExtractionOptions.ThinkingLevel,
             RunCommand.StopAfter, ThoughtOptions.Thoughts
         };
 

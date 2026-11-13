@@ -50,7 +50,8 @@ public static class PlanCommand {
             Video, Folder, From, Limit, ResumeWindow, Resume, Force,
             ExtractionOptions.Out, ExtractionOptions.Parts, ExtractionOptions.Overlap,
             ExtractionOptions.Speed, ExtractionOptions.Model, ExtractionOptions.Profile,
-            ExtractionOptions.VideoFps, ExtractionOptions.SkipTokenCounting, ExtractionOptions.FileActivationDelay
+            ExtractionOptions.VideoFps, ExtractionOptions.SkipTokenCounting, ExtractionOptions.FileActivationDelay,
+            ExtractionOptions.MaxOutputTokens, ExtractionOptions.ThinkingLevel
         };
 
         command.SetAction(async (parseResult, _) => {

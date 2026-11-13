@@ -50,6 +50,14 @@ public static class ExtractionOptions {
         Description = "Seconds to wait after file activation in AI Studio (default 0 for maximum prefix cache freshness)."
     };
 
+    public static readonly Option<int?> MaxOutputTokens = new("--max-output-tokens") {
+        Description = "Maximum output token budget per generation (e.g. 65536, 200000, 300000)."
+    };
+
+    public static readonly Option<string?> ThinkingLevel = new("--thinking-level") {
+        Description = "Thinking level for reasoning models (e.g. MINIMAL, LOW, MEDIUM, HIGH, XHIGH)."
+    };
+
     /// <summary>
     /// Applies whichever overrides were supplied. Config writeback is off by default in CLI mode,
     /// so these change the in-memory config for this run only unless --save-config was passed.
@@ -98,6 +106,14 @@ public static class ExtractionOptions {
 
         if (parseResult.GetValue(FileActivationDelay) is int activationDelay) {
             config.FileActivationDelaySeconds = activationDelay;
+        }
+
+        if (parseResult.GetValue(MaxOutputTokens) is int maxOutputTokens && maxOutputTokens > 0) {
+            config.MaxOutputTokens = maxOutputTokens;
+        }
+
+        if (parseResult.GetValue(ThinkingLevel) is string thinkingLevel && !string.IsNullOrWhiteSpace(thinkingLevel)) {
+            config.ThinkingLevel = thinkingLevel.Trim().ToUpperInvariant();
         }
 
         ThoughtOptions.Apply(config, parseResult);

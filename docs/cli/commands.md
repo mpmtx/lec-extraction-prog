@@ -33,10 +33,12 @@ lecx run --folder "D:/lecture-videos/analysis2" --from 03-30-2026
 | `--fps <rate>` | How many frames per second Gemini samples from each uploaded part (`GoogleVideoFps`, AI Studio), e.g. `0.25`, `0.3333333`, `1`. Aliases `--google-video-fps`, `--video-fps`. `plan` reports it as `googleVideoFps` |
 | `--skip-token-counting` | Skip the pre-flight token count, which spends free-tier quota |
 | `--file-activation-delay <s>` | Seconds to wait after an uploaded file becomes active. Default 0 |
+| `--max-output-tokens <n>` | Output-token budget per request, this run only, for Stage 1 and refinement steps 1-3 (step 3's value also holds for the PDF repair rounds). Only Hydrogen (`gemini-4-*`) takes more than 65,536; an older model is held at 65,536 |
+| `--thinking-level <level>` | Thinking level for the same stages, this run only: `MINIMAL`, `LOW`, `MEDIUM`, `HIGH` or `XHIGH`. An older model gets `HIGH` for `XHIGH`; Hydrogen takes `LOW` to `XHIGH` (it rejects `MINIMAL`) |
 | `--thoughts <mode>` | Thought summaries for every stage, see [`lecx thoughts`](#lecx-thoughts--free) |
 
 `batch` accepts the same selection and segment flags (`--from`, `--limit`, `--parts`, `--fps`,
-`--stop-after`, `--thoughts`, `--force`) and passes them to every worker.
+`--stop-after`, `--thoughts`, `--force`, `--max-output-tokens`, `--thinking-level`) and passes them to every worker.
 
 Exits `0` on full success, `6` if some videos succeeded and others failed, `4` if the
 key does not resolve (checked **before** any request).
@@ -62,7 +64,7 @@ lecx youtube --url "https://www.youtube.com/watch?v=IPfi49IbHNU" --duration 1:35
 | `--duration <d>` | Required. Minutes (`90`) or `HH:MM:SS` / `MM:SS`. The app cannot look it up, and the fragments are cut from it |
 | `--name <name>` | Output name. The folder is `<out>/step1-<name>/`, the parts `step1-<name>-partN.tex`. Default `youtube-<video id>` |
 | `--parts <n>` | Number of fragments. Default one per started 45 minutes; they overlap by `--overlap` (config `OverlapSeconds`) |
-| `--out` · `--overlap` · `--model` · `--profile` · `--stop-after extract` · `--thoughts` | As for `run` |
+| `--out` · `--overlap` · `--model` · `--profile` · `--max-output-tokens` · `--thinking-level` · `--stop-after extract` · `--thoughts` | As for `run` |
 
 Differences from `run`: **no resume** (a rerun requests every fragment again), no `plan` support
 (use `--dry-run`, which prints the fragments and the key), and `--fps` has no effect. A fragment
@@ -123,6 +125,7 @@ lecx refine run --tex out/step1-lecture.tex --step 1 --through-end
 | `--overlap <s>` | Overlap the segments were cut with, for step 1. Defaults to the extraction config's `OverlapSeconds` |
 | `--profile <n>` | API-key profile for this run only: the number from `lecx config profiles` (or a key name such as `latex-refinement`). That key is then looked up by name in the refinement config's own key list, whose order may differ (before 2026-10-30 the number was an index into that list, so `--profile 4` ran on profile 0's key). Exits `2` if the key is not in that list, `4` if it is unset. Switch it when a key hits its rate limit |
 | `--model <id>` | Model for every step of this run only (e.g. `gemini-3.7-flash` when a key's daily quota on the configured model is used up: the free-tier quota counts per model) |
+| `--max-output-tokens <n>` · `--thinking-level <level>` | As for `run`, for every step of this run and the PDF repair that follows it (which uses step 3's settings) |
 
 Step 1 reads the part count from the document itself (its `% --- TEIL n` separators), so
 it is right for `--parts auto` and for a config changed since the extraction.
@@ -259,7 +262,7 @@ lecx finish --folder "<one lecture folder>"
 | `--source <dir>` | Where the videos are, for unfinished transcriptions. Defaults to the configured source folder, then two levels up from the lecture folder |
 | `--limit <n>` | At most n lectures, chronologically |
 | `--clean-tmp` | Delete a lecture's `tmp/` (FFmpeg segments, ~0.5 GB) once it has its PDF |
-| `--profile` · `--model` · `--thoughts` | Passed to every command it runs |
+| `--profile` · `--model` · `--max-output-tokens` · `--thinking-level` · `--thoughts` | Passed to every command it runs |
 
 Exits `0` when every lecture reached a PDF, `6` when some did, otherwise the first failing
 command's code. A `4` (key) or `3` (prompt) stops it, since every later lecture would fail

@@ -46,6 +46,7 @@ public static class BatchCommand {
             ExtractionOptions.Out, ExtractionOptions.Parts, ExtractionOptions.Overlap,
             ExtractionOptions.Speed, ExtractionOptions.VideoFps,
             ExtractionOptions.SkipTokenCounting, ExtractionOptions.FileActivationDelay,
+            ExtractionOptions.MaxOutputTokens, ExtractionOptions.ThinkingLevel,
             ThoughtOptions.Thoughts
         };
 
@@ -263,6 +264,8 @@ public static class BatchCommand {
         Forward(arguments, "--video-fps", parseResult.GetValue(ExtractionOptions.VideoFps)?.ToString(System.Globalization.CultureInfo.InvariantCulture));
         Forward(arguments, "--skip-token-counting", parseResult.GetValue(ExtractionOptions.SkipTokenCounting)?.ToString());
         Forward(arguments, "--file-activation-delay", parseResult.GetValue(ExtractionOptions.FileActivationDelay)?.ToString());
+        Forward(arguments, "--max-output-tokens", parseResult.GetValue(ExtractionOptions.MaxOutputTokens)?.ToString());
+        Forward(arguments, "--thinking-level", parseResult.GetValue(ExtractionOptions.ThinkingLevel));
         Forward(arguments, "--resume-window", parseResult.GetValue(PlanCommand.ResumeWindow)?.ToString(System.Globalization.CultureInfo.InvariantCulture));
         Forward(arguments, "--stop-after", parseResult.GetValue(RunCommand.StopAfter));
         Forward(arguments, "--thoughts", parseResult.GetValue(ThoughtOptions.Thoughts));
