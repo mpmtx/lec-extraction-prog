@@ -36,10 +36,51 @@ public static partial class TexDocumentWriter {
     // The step names that open each layer. Numbered after the file prefixes, so the label and the
     // file name agree: step2-<name>-offset-merged.tex is written by "Step 2/4".
     public const string TranscriptionStep = "Step 1/4 - Transcription";
+    public const string SinglePartTranscriptionStep = "Step 1/4 - Transcription (single part, 1 of 1)";
     public const string MergeStep = "Step 2/4 - Merge & timestamp alignment (refinement step 1)";
     public const string SpeechStep = "Step 3/4 - Speech refinement (refinement step 2)";
     public const string FinalStep = "Step 4/4 - Final refinement (refinement step 3)";
     public const string PdfRepairStep = "PDF repair after step 4/4";
+
+    /// <summary>
+    /// [AI Context] Header layer of a single-pass (1-part) Stage 1 output (<c>step1-&lt;name&gt;.tex</c>):
+    /// combines the source video, model parameters, thought summaries link, and token usage in one layer
+    /// without a multi-part wrapper or <c>-all</c> combination layer.
+    /// [Human] Header-Block einer einteiligen Stage-1-Transkription (ohne -part1 oder -all).
+    /// </summary>
+    public static string BuildSinglePartHeader(string outputFileName, string sourceSegmentFileName, string originalVideoFileName,
+        TokenUsage usage, string model, GenerationParameters generation, string? thoughtsFileName = null) {
+        var lines = new List<string> {
+            SinglePartTranscriptionStep,
+            $"Output: {outputFileName}",
+            $"Source video: {originalVideoFileName}",
+            $"Source segment: {sourceSegmentFileName}"
+        };
+        lines.AddRange(ModelLines(model, generation));
+        lines.Add($"Processed on: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        AddThoughtsLine(lines, thoughtsFileName);
+        return Layer(lines, TokenLines(usage, "Token Usage"));
+    }
+
+    /// <summary>
+    /// [AI Context] True when any inherited header layer at the top of <paramref name="tex"/> marks
+    /// the document as originating from a single-pass (1-part) Stage 1 extraction.
+    /// [Human] Prüft anhand des Header-Stacks, ob das Dokument aus einem Einzelteil-Upload stammt.
+    /// </summary>
+    public static bool HasSinglePartHeader(string tex) =>
+        SplitHeaderLayers(tex).Layers.Contains(SinglePartTranscriptionStep, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// [AI Context] True when any inherited header layer at the top of <paramref name="tex"/> marks
+    /// a multi-part combined extraction or a Step 1 merge layer (so refinement keeps <c>-offset-</c>
+    /// file names even after separators were merged away).
+    /// [Human] Prüft anhand des Header-Stacks, ob ein mehrteiliges/gemergtes Dokument vorliegt.
+    /// </summary>
+    public static bool HasMultiPartOrMergeHeader(string tex) {
+        string layers = SplitHeaderLayers(tex).Layers;
+        return layers.Contains("part(s) combined", StringComparison.OrdinalIgnoreCase)
+            || layers.Contains(MergeStep, StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// [AI Context] The layer of one transcribed part: model parameters, the part's start offset in

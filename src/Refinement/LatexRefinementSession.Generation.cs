@@ -239,7 +239,8 @@ public partial class LatexRefinementSession {
                 RetryContext = outputFileName,
                 InitialBackoff = retryBackoff,
                 FirstChunkTimeout = AppConfig.FirstChunkTimeout,
-                HighDemandDelay = retryBackoff,
+                HighDemandDelay = _config.HighDemandDelaySecondsOverride is int hd && hd > 0 ? hd : retryBackoff,
+                MaxRetries = _config.MaxApiRetries is int mr && mr > 0 ? mr : null,
                 CancelledAsWarning = true,
                 ReportRequest = request => {
                     var usage = request.Usage;

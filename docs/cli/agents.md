@@ -192,7 +192,7 @@ Two files in the repository root are looked up relative to the *current director
 A script that drives `lecx` must `cd` into the repository root first, and pass `--video` and
 `--out` as absolute paths.
 
-**"High demand" (HTTP 503) gives up after 8 attempts and loses only that part.** The video then
+**"High demand" (HTTP 503) gives up after 5 attempts and loses only that part.** The video then
 ends with exit `6`. The parts finished before it are on disk, so running the same video again
 within `--resume-window` requests only the missing part and the refinement. Whether the 503
 attempts count against the free-tier daily quota is **not settled**. In the maintainer's
@@ -205,6 +205,21 @@ console is the place to check. On 2026-10-19 that page showed 7 requests for a r
 the 7th was part 4's first attempt, which ended in a 503. The log shows no streamed text before
 it (`Die bisherige Teilantwort wird verworfen` is printed on every retry, it is no evidence of
 output). So at least some 503s count against the daily quota; which ones is still open.
+
+**`gemini-4-hydrogen` Long Decode Hop 2 (`ContinuationToken`) is disproportionately hit by 503s (observed 2026-11-21).**
+When `--thinking-level XHIGH` spends ~55k thinking tokens on Hop 1 of a ~450k-token part or a
+refinement step, it hits the 65,536 single-request ceiling and triggers a `ContinuationToken`
+Hop 2. Across Algebra I runs on 2026-11-21:
+- **Single-hop calls passed cleanly:** Week 10 `HIGH` refinement completed all 3 steps with 0
+  retries; Week 10 `XHIGH` Parts 2 & 3 each finished in 1 hop (`<65k` combined tokens) with 1
+  retry total; Week 6 `XHIGH` Step 1 (Merge) finished in 1 hop.
+- **Hop 2 continuations repeatedly hit 503 waves:** Week 5 Part 2 (`XHIGH`) succeeded on Hop 1
+  three times in a row (~55k thinking + ~8–11k output) only to fail on Hop 2 with 503s/stream
+  drops; Week 10 Part 1 (morning) and Week 6 Step 2 Speech also hit repeated 503s on Hop 2.
+- **Practical takeaway:** Keep Stage 1 on `XHIGH` (short ~15–17 min parts often fit in 1 hop
+  when thinking stays under ~50k), and if Refinement Steps 2–3 stall on `XHIGH` Hop 2 503s,
+  drop refinement to `--thinking-level HIGH` (with a 240 s `RateLimitDelaySeconds` /
+  `HighDemandDelaySeconds`) so each step finishes in a single hop.
 
 **A key low on 3.8 quota may not gain anything from `--model gemini-3.7-flash`.** Google answers 3.7 requests with
 3.8. It used to count the daily 20 per requested model name, but on 2026-11-06 a 3.7 request was
@@ -311,10 +326,12 @@ speech, didactic boxes, `aiNote`s and TikZ (~2–3k tokens each instead of ~5k);
 stays complete. That is margin; uploading them (`InlinePrecedingLecTexParts: false`) takes them out of
 the count altogether. With slimming, 02-23, 02-29 and 03-01 part 4 (359k–364k) passed inline.
 
-**A request that sends nothing for 10 minutes is sent again.** The heartbeat prints
+**A silent request is retried after `FirstChunkTimeoutMinutes`.** The heartbeat prints
 `Noch keine Daten vom Server (N min …)` every two silent minutes; at `FirstChunkTimeoutMinutes`
-(appsettings.json, default 10, `0` = off) the attempt is abandoned and retried after 30 s. On
-2026-10-15 one request stalled for 20 minutes and its retry then answered normally.
+(`appsettings.json`, C# default 10, set to **15** on 2026-11-21 for `gemini-4-hydrogen` 450k-token
+prompts where 6–10 min thinking/queue waits are routine; `0` = off) the attempt is abandoned and
+retried after 30 s. On 2026-10-15 one request stalled for 20 minutes and its retry then answered
+normally.
 
 **A stream that stops mid-answer is continued after the same 10 minutes.** The limit is on silence,
 not length, so a long answer is never cut. Once data has arrived the heartbeat says `Stream liefert

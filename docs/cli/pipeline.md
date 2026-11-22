@@ -11,12 +11,12 @@ is why every stage is separately runnable and why a run can resume partway throu
    │    compress → 1 FPS, mono                │  lecx media audio
    │    slice into overlapping segments       │
    └───┬──────────────────────────────────────┘
-       │  <target>/<name>/tmp/<name>-partN.mp4
+       │  <target>/<name>/tmp/<name>-partN.mp4  (or <name>.mp4 for 1 part)
    ┌───▼──────────────────────────────────────┐
    │ 2. Extraction (Gemini)            PAID   │  lecx extract run
    │    one request per segment               │
    └───┬──────────────────────────────────────┘
-       │  <target>/<name>/step1-<name>-partN.tex
+       │  <target>/<name>/step1-<name>-partN.tex  (or step1-<name>.tex for 1 part)
    ┌───▼──────────────────────────────────────┐
    │ 3. Refinement, steps 1-3          PAID   │  lecx refine run
    │    merge + timestamps → speech → polish  │
@@ -45,10 +45,11 @@ This trips people up, so state it plainly.
 | Output folder | filename minus `-speed-N-compressed` / `-compressed` | `02-19-2026-thursday-week1-Analysis_II` |
 | `.tex` stem | the same, plus a `step1-` prefix | `step1-02-19-2026-thursday-week1-Analysis_II` |
 
-So a part file lands at:
+So a part file lands at (or `step1-<folder-name>.tex` for a single-part run):
 
 ```
-<target>/<folder-name>/step1-<folder-name>-part2.tex
+<target>/<folder-name>/step1-<folder-name>-part2.tex   # multi-part
+<target>/<folder-name>/step1-<folder-name>.tex         # single-pass (1 part, no -all / -offset; skips merge step)
 ```
 
 Both come from `ExtractionHelpers.ComputeOutputFolderName` and `ComputeTexBaseName`, which
@@ -88,9 +89,10 @@ lost; it is why part 2 of an 84-minute lecture starts at 2398 s rather than 2638
 
 `lecx media probe` reports the resulting geometry before anything is cut.
 
-`N` is `NumberOfParts`, or with `--parts auto` the video length divided by 22.5 minutes,
-rounded: a 45-minute lecture gets 2 parts, a 90-minute double lecture 4, so every segment
-stays around 25 minutes whatever the lecture's length.
+`N` is `NumberOfParts`, or with `--parts auto` model-aware: pre-Hydrogen models (`2.5` / `3.x`)
+divide the video length by 22.5 minutes, rounded (a 45-minute lecture gets 2 parts, a
+90-minute double lecture 4), while Hydrogen (`gemini-4-*`) divides by 45 minutes, rounded
+(a ~45-minute lecture gets 1 part, a ~90-minute double lecture 2 across 67.5–112.5 min).
 
 ## Caching and resume — two different windows
 

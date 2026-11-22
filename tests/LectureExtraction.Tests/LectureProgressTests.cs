@@ -179,4 +179,39 @@ public class LectureProgressTests : IDisposable {
 
         Assert.Equal(["12-15-2025-monday", "02-18-2026-wednesday"], actions.Select(a => a.Lecture));
     }
+
+    [Fact]
+    public void Single_pass_stage1_skips_merge_and_progresses_with_non_offset_filenames() {
+        Touch($"step1-{Lecture}.tex");
+
+        var afterExtract = LectureProgress.Scan(_folder);
+        Assert.True(afterExtract.IsSinglePass);
+        Assert.Equal(1, afterExtract.PartsCount);
+        Assert.Equal(LectureStage.Speech, afterExtract.NextStage);
+        Assert.Equal($"step1-{Lecture}.tex", Path.GetFileName(afterExtract.NextInput));
+        Assert.Equal(
+            ["refine", "run", "--tex", afterExtract.NextInput!, "--step", "2", "--through-end"],
+            FinishCommand.PlanActions([afterExtract], _ => null, []).Single().Arguments!);
+
+        Touch($"step3-{Lecture}-speech_refined.tex");
+        Assert.Equal(LectureStage.Polish, LectureProgress.Scan(_folder).NextStage);
+
+        Touch($"step4-{Lecture}-final.tex");
+        Assert.Equal(LectureStage.Pdf, LectureProgress.Scan(_folder).NextStage);
+
+        Touch($"{Lecture}.pdf");
+        Assert.Equal(LectureStage.Done, LectureProgress.Scan(_folder).NextStage);
+    }
+
+    [Fact]
+    public void Lecture_title_containing_partial_still_counts_as_single_pass() {
+        string partialTitle = "02-18-2026-wednesday-week1-partial_fractions";
+        string dir = Path.Combine(_root, partialTitle);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, $"step1-{partialTitle}.tex"), "\\section{Intro}");
+
+        var p = LectureProgress.Scan(dir);
+        Assert.True(p.IsSinglePass);
+        Assert.Equal(LectureStage.Speech, p.NextStage);
+    }
 }

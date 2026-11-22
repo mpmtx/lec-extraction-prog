@@ -45,24 +45,24 @@ public partial class VertexAutoExtractionSession {
         if (hasSys) sysParts.Add(new() { Text = _systemInstructionText });
         var cacheContents = new List<Content>();
         if (hasHist) {
-            var textOnly = _historyParts.Where(p => p.FileData == null && p.InlineData == null && !string.IsNullOrEmpty(p.Text)).ToList();
-            var nonText = _historyParts.Where(p => p.FileData != null || p.InlineData != null).ToList();
+            var (textOnly, nonSystem) = SystemInstructionTextBuilder.PartitionForTextOnlySystemInstruction(_historyParts);
             sysParts.AddRange(textOnly);
-            if (nonText.Count > 0) {
-                cacheContents.Add(new() { Role = "user", Parts = nonText });
+            if (nonSystem.Count > 0) {
+                cacheContents.Add(new() { Role = "user", Parts = nonSystem });
             }
         }
 
         string combinedChecksum = ContextCacheStateManager.ComputeChecksum(_systemInstructionText + (hasHist ? $"_hist_{_historyParts.Count}" : ""));
         var savedState = ContextCacheStateManager.LoadState(ContextCacheStateManager.StateFileVertex);
 
+        int resolvedMaxOutputTokens = ModelCapabilities.ResolveMaxOutputTokens(_config.CurrentModel, _config.MaxOutputTokens);
         bool match = ContextCacheStateManager.MatchesConfig(
             savedState,
             _config.CurrentModel,
             _config.Temperature,
             _config.TopP,
             _config.TopK,
-            _config.MaxOutputTokens,
+            resolvedMaxOutputTokens,
             _config.ThinkingBudget,
             _config.ThinkingLevel,
             combinedChecksum
@@ -94,7 +94,7 @@ public partial class VertexAutoExtractionSession {
                 savedState.Temperature = _config.Temperature;
                 savedState.TopP = _config.TopP;
                 savedState.TopK = _config.TopK;
-                savedState.MaxOutputTokens = _config.MaxOutputTokens;
+                savedState.MaxOutputTokens = resolvedMaxOutputTokens;
                 savedState.ThinkingBudget = _config.ThinkingBudget;
                 savedState.ThinkingLevel = _config.ThinkingLevel;
                 savedState.SystemInstructionChecksum = combinedChecksum;

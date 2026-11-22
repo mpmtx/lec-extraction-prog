@@ -39,6 +39,14 @@ public class LatexRefinementSessionConfig {
 
     public RefinementStepConfig Step3LastRefinement { get; set; } = new();
 
+    /// <summary>Runtime-only override for maximum consecutive failed API attempts per request.</summary>
+    [Newtonsoft.Json.JsonIgnore]
+    public int? MaxApiRetries { get; set; }
+
+    /// <summary>Runtime-only override for high-demand (503) retry wait in seconds.</summary>
+    [Newtonsoft.Json.JsonIgnore]
+    public int? HighDemandDelaySecondsOverride { get; set; }
+
     /// <summary>Creates a deep copy so runtime overrides (e.g. disabling step 1 for 1-part videos) never mutate the loaded configuration.</summary>
     public LatexRefinementSessionConfig Clone() =>
         Newtonsoft.Json.JsonConvert.DeserializeObject<LatexRefinementSessionConfig>(Newtonsoft.Json.JsonConvert.SerializeObject(this))!;

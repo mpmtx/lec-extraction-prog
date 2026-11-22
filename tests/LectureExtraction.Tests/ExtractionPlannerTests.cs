@@ -127,6 +127,21 @@ public class ExtractionPlannerTests : IDisposable {
     }
 
     [Fact]
+    public void SinglePartConfig_FindsBareSinglePartFileForResume() {
+        var config = Config(parts: 1);
+        string video = Video("02-18-2026-wednesday-week1-Analysis.mp4");
+        string folder = Path.Combine(config.TargetFolder, ExtractionHelpers.ComputeOutputFolderName(video));
+        Directory.CreateDirectory(folder);
+        string singleTex = Path.Combine(folder, $"{ExtractionHelpers.ComputeTexBaseName(video)}.tex");
+        File.WriteAllText(singleTex, "\\section{done}");
+
+        var plan = ExtractionPlanner.Build(config, [video], ExtractionPlanner.DefaultResumeWindowHours, force: false);
+
+        Assert.Equal(1, plan.ResumableSegments);
+        Assert.Equal(0, plan.PendingRequests);
+    }
+
+    [Fact]
     public void BothVariantsOfOneLecture_AreReportedAsAnOutputFolderCollision() {
         // The real hazard: a source folder holding lecture.mp4 and lecture-speed-1-compressed.mp4
         // resolves both to one output folder, so each reads the other's parts as its own cache.
@@ -202,6 +217,36 @@ public class ExtractionPlannerTests : IDisposable {
 
         Assert.Equal(Stage1PromptFiles.SystemInstructionPaths, config.SystemInstructionPaths);
         Assert.Equal(Stage1PromptFiles.HistoryPaths, config.HistoryPreloadPaths);
+    }
+
+    [Fact]
+    public void AutoParts_UsesHydrogenOrLegacyRuleAccordingToModel() {
+        string wednesday = Video("10-28-2026-wednesday-week7-Algebra_I.mp4");
+        string tuesday = Video("10-27-2026-tuesday-week7-Algebra_I.mp4");
+        var durations = new System.Collections.Generic.Dictionary<string, double> {
+            [tuesday] = 5298.24,
+            [wednesday] = 2634.0
+        };
+
+        var legacyConfig = new AiStudioAutoExtractionConfig {
+            NumberOfParts = NumberOfParts.Auto,
+            CurrentModel = "gemini-3.8-flash",
+            SourceFolder = _root,
+            TargetFolder = Path.Combine(_root, "out")
+        };
+        var legacyPlan = ExtractionPlanner.Build(legacyConfig, [tuesday, wednesday], ExtractionPlanner.DefaultResumeWindowHours, force: false, durations);
+        Assert.Equal(4, legacyPlan.Videos[0].SegmentCount);
+        Assert.Equal(2, legacyPlan.Videos[1].SegmentCount);
+
+        var hydrogenConfig = new AiStudioAutoExtractionConfig {
+            NumberOfParts = NumberOfParts.Auto,
+            CurrentModel = "gemini-4-hydrogen",
+            SourceFolder = _root,
+            TargetFolder = Path.Combine(_root, "out")
+        };
+        var hydrogenPlan = ExtractionPlanner.Build(hydrogenConfig, [tuesday, wednesday], ExtractionPlanner.DefaultResumeWindowHours, force: false, durations);
+        Assert.Equal(2, hydrogenPlan.Videos[0].SegmentCount);
+        Assert.Equal(1, hydrogenPlan.Videos[1].SegmentCount);
     }
 }
 

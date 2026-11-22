@@ -70,6 +70,34 @@ public class HistoryUploadTests {
     }
 
     [Fact]
+    public async Task Interleaves_markdown_and_images_in_input_order() {
+        AnsiConsole.Console = new TestConsole();
+        string dir = CreateTempDir();
+        try {
+            string firstMd = Path.Combine(dir, "ex1.md");
+            string img = Path.Combine(dir, "ex1.png");
+            string secondMd = Path.Combine(dir, "ex2.md");
+            File.WriteAllText(firstMd, "First Example");
+            File.WriteAllBytes(img, [0x89, 0x50, 0x4E, 0x47]);
+            File.WriteAllText(secondMd, "Second Example");
+            var uploader = new AttachmentUploader(client: null!, uploadFolder: "", includePaths: [], isAiStudio: true, gcsBucketName: "", inlineImages: true);
+
+            var loaded = await SystemInstructionTextBuilder.AppendHistoryFilesAsync([firstMd, img, secondMd], new StringBuilder(), dir, uploader);
+
+            Assert.NotNull(loaded.OrderedParts);
+            Assert.Equal(5, loaded.OrderedParts!.Count);
+            Assert.Contains("First Example", loaded.OrderedParts[0].Text);
+            Assert.Contains("<image path=\"./ex1.png\">", loaded.OrderedParts[1].Text);
+            Assert.NotNull(loaded.OrderedParts[2].InlineData);
+            Assert.Equal("\n</image>\n", loaded.OrderedParts[3].Text);
+            Assert.Contains("Second Example", loaded.OrderedParts[4].Text);
+        }
+        finally {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
     public async Task Failed_upload_is_inlined_as_before() {
         AnsiConsole.Console = new TestConsole();
         string dir = CreateTempDir();

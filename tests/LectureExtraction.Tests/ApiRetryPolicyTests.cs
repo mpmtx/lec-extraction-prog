@@ -22,7 +22,7 @@ namespace LectureExtraction.Tests;
 /// it works" is a cost bug, not resilience. The case that motivated these tests: resetting the
 /// failure counter whenever a chunk arrived made a stream that keeps dying after its first chunk
 /// retry forever. And treating every 4xx as transient meant a wrong model name waited out minutes
-/// of backoff eight times before failing.</para>
+/// of backoff five times before failing.</para>
 ///
 /// <para>The waits are replaced by an instant fake and the console by a <see cref="TestConsole"/>,
 /// so the class joins the console collection.</para>
@@ -73,6 +73,31 @@ public class ApiRetryPolicyTests : IDisposable {
 
         Assert.Equal(3, attempts);
         Assert.Equal(2, _waits.Count);
+    }
+
+    [Fact]
+    public async Task Default_stream_retry_limit_stops_after_5_attempts() {
+        int attempts = 0;
+
+        await Assert.ThrowsAsync<ServerError>(() => ApiRetryPolicy.ExecuteStreamWithRetryAsync(
+            () => { attempts++; return Stream([], new ServerError("high demand", 503, "UNAVAILABLE")); },
+            _ => Task.CompletedTask,
+            CancellationToken.None));
+
+        Assert.Equal(5, attempts);
+        Assert.Equal(4, _waits.Count);
+    }
+
+    [Fact]
+    public async Task Default_unary_retry_limit_stops_after_5_attempts() {
+        int attempts = 0;
+
+        string? result = await ApiRetryPolicy.ExecuteWithRetryAsync<string>(
+            () => { attempts++; throw new ServerError("high demand", 503, "UNAVAILABLE"); });
+
+        Assert.Null(result);
+        Assert.Equal(5, attempts);
+        Assert.Equal(4, _waits.Count);
     }
 
     [Theory]

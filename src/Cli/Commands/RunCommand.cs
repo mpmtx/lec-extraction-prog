@@ -41,6 +41,7 @@ public static class RunCommand {
             ExtractionOptions.Model, ExtractionOptions.Profile,
             ExtractionOptions.VideoFps, ExtractionOptions.SkipTokenCounting, ExtractionOptions.FileActivationDelay,
             ExtractionOptions.MaxOutputTokens, ExtractionOptions.ThinkingLevel,
+            ExtractionOptions.HighDemandDelay, ExtractionOptions.MaxRetries,
             ThoughtOptions.Thoughts
         };
 
@@ -185,6 +186,14 @@ public static class RunCommand {
                     (refinementConfig.UseVertex ? step.Vertex : step.AiStudio).ThinkingLevel = normalized;
                 }
             }
+        }
+
+        if (config.MaxApiRetries != ApiRetryPolicy.DefaultMaxRetries && config.MaxApiRetries > 0) {
+            refinementConfig.MaxApiRetries = config.MaxApiRetries;
+        }
+
+        if (parseResult.GetValue(ExtractionOptions.HighDemandDelay) is int highDemandDelay && highDemandDelay > 0) {
+            refinementConfig.HighDemandDelaySecondsOverride = highDemandDelay;
         }
 
         ThoughtOptions.Apply(refinementConfig, parseResult);

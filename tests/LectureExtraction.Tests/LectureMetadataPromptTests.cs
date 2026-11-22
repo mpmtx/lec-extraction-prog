@@ -36,4 +36,37 @@ public class LectureMetadataPromptTests {
         Assert.Contains("day of the week (Unknown)", text);
         Assert.Contains("Do not guess it", text);
     }
+
+    [Fact]
+    public void Single_part_metadata_and_segment_prompt_state_the_lecture_has_only_one_part() {
+        string meta = Stage1SegmentPrompt.LectureMetadataText(Info(new DateTime(2026, 10, 28), "Wednesday"), "Wednesday, 10/28/2026, Week 7", 1, totalParts: 1);
+        Assert.Contains("ONLY ONE part", meta);
+        Assert.Contains("no later merge step", meta);
+
+        string singlePrompt = Stage1SegmentPrompt.BuildParameters(
+            @"D:\tmp\10-28-2026-wednesday-week7-Algebra_I.mp4",
+            partNumber: 1,
+            totalParts: 1,
+            originalFileName: "10-28-2026-wednesday-week7-Algebra_I.mp4",
+            segmentDurationSeconds: 2634,
+            fullOriginalVideoDurationSeconds: 2634);
+
+        Assert.Contains("`10-28-2026-wednesday-week7-Algebra_I.mp4`", singlePrompt);
+        Assert.Contains("SINGLE-PART LECTURE (only 1 part total", singlePrompt);
+        Assert.Contains("there is no Part 2 and no merging phase afterwards", singlePrompt);
+        Assert.Contains("do NOT emit a trailing", singlePrompt);
+        Assert.DoesNotContain("even if it cuts off mid-sentence", singlePrompt);
+
+        string multiPrompt = Stage1SegmentPrompt.BuildParameters(
+            @"D:\tmp\10-27-2026-tuesday-week7-Algebra_I-part1.mp4",
+            partNumber: 1,
+            totalParts: 2,
+            originalFileName: "10-27-2026-tuesday-week7-Algebra_I.mp4",
+            segmentDurationSeconds: 2769,
+            fullOriginalVideoDurationSeconds: 5298);
+
+        Assert.Contains("Part 1 of 2", multiPrompt);
+        Assert.Contains("even if it cuts off mid-sentence", multiPrompt);
+        Assert.DoesNotContain("SINGLE-PART LECTURE", multiPrompt);
+    }
 }

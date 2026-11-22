@@ -103,4 +103,25 @@ public class PartReuseTests : IDisposable {
 
         Assert.Null(PartReuse.FindReusablePart(_folder, BaseName, 1, TimeSpan.Zero));
     }
+
+    [Fact]
+    public void Single_part_mode_uses_bare_tex_stem_and_ignores_multipart_siblings() {
+        WritePart($"{BaseName}-part1.tex", TimeSpan.FromMinutes(1));
+        WritePart($"{BaseName}-all.tex", TimeSpan.FromMinutes(1));
+        WritePart($"{BaseName}-all-offset.tex", TimeSpan.FromMinutes(1));
+
+        Assert.Null(PartReuse.FindNewestPartFile(_folder, BaseName, 1, totalParts: 1));
+
+        WritePart($"{BaseName}.tex", TimeSpan.FromHours(5));
+        string copy = WritePart($"{BaseName}-copy-1.tex", TimeSpan.FromMinutes(10));
+
+        Assert.Equal(copy, PartReuse.FindReusablePart(_folder, BaseName, 1, Window, totalParts: 1));
+    }
+
+    [Fact]
+    public void Video_segment_filename_omits_part1_for_single_pass_uploads() {
+        Assert.Equal(Path.Combine(_folder, "lec.mp4"), VideoSegmentProducer.SegmentFilePath(_folder, "lec", 1, 1));
+        Assert.Equal(Path.Combine(_folder, "lec-part1.mp4"), VideoSegmentProducer.SegmentFilePath(_folder, "lec", 1, 2));
+        Assert.Equal(Path.Combine(_folder, "lec-part2.mp4"), VideoSegmentProducer.SegmentFilePath(_folder, "lec", 2, 2));
+    }
 }

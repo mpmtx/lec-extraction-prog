@@ -55,6 +55,9 @@ public sealed class GenerationLoopOptions {
     /// <summary>The retry policy's wait when the model is in high demand; null keeps its default.</summary>
     public int? HighDemandDelay { get; init; }
 
+    /// <summary>Maximum consecutive failed API attempts before giving up; null keeps <see cref="ApiRetryPolicy.DefaultMaxRetries"/>.</summary>
+    public int? MaxRetries { get; init; }
+
     /// <summary>Runs before every request (a rate-limit wait); false ends the loop.</summary>
     public Func<Task<bool>>? BeforeRequestAsync { get; init; }
 
@@ -220,6 +223,7 @@ public static class GenerationLoop {
                         return Task.CompletedTask;
                     },
                     cancellationToken: cancelScope.Token,
+                    maxRetries: options.MaxRetries ?? ApiRetryPolicy.DefaultMaxRetries,
                     initialBackoff: options.InitialBackoff ?? 130,
                     retryContext: options.RetryContext,
                     onRetry: () => {

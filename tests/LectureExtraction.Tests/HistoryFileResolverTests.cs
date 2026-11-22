@@ -157,6 +157,14 @@ public class HistoryFileResolverTests {
             Assert.Contains("Valid Instruction Content", result);
             Assert.DoesNotContain("deleted-obsolete.md", result);
             Assert.DoesNotContain("Should Not Appear", result);
+            Assert.Contains("Normative rules", result);
+            Assert.Contains($"Common root: {tempDir}", result);
+            Assert.DoesNotContain($"Root: {tempDir}", result);
+
+            string withUserTurnHistory = await SystemInstructionTextBuilder.BuildAsync(
+                [validDoc], [validDoc], tempDir, historyInUserTurn: true);
+            Assert.Contains("start of the user turn", withUserTurnHistory);
+            Assert.Contains("full system-instruction authority", withUserTurnHistory);
         }
         finally {
             Directory.Delete(tempDir, true);

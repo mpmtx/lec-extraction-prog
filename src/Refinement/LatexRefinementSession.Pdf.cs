@@ -35,11 +35,12 @@ public partial class LatexRefinementSession {
     /// [AI Context] Compiles the final merged LaTeX file into a PDF using local pdflatex. Uses a wrapper file to inject the preamble.
     /// [Human] Baut das fertige LaTeX-Skript mithilfe einer Preamble (Design-Vorlage) zu einem PDF zusammen.
     /// </summary>
-    private async Task<bool> CompilePdfAsync(string finalTexFile, string baseName, string targetFolder, string stepPrefix = "step4", bool allowRetryOnFailure = true, bool autoFixApplied = false) {
+    private async Task<bool> CompilePdfAsync(string finalTexFile, string baseName, string targetFolder, string stepPrefix = "step4", bool allowRetryOnFailure = true, bool autoFixApplied = false, bool? useOffsetNaming = null) {
         if (!System.IO.File.Exists(finalTexFile)) {
             Ui.Error($"Kann PDF nicht generieren: {finalTexFile} existiert nicht.", "LaTeX Refinement");
             return false;
         }
+        bool resolvedOffsetNaming = useOffsetNaming ?? UsesOffsetFileNaming(finalTexFile, ResolvePartsCount([finalTexFile]));
 
         LectureLanguage language = LectureLanguageDetector.Detect(await System.IO.File.ReadAllTextAsync(finalTexFile));
         string preamblePath = _config.PdfCompilation?.ResolvePreamblePath(language) ?? "pdf-preamble.tex";
@@ -121,7 +122,7 @@ public partial class LatexRefinementSession {
                     // result still fails, does the AI repair below get its turn.
                     if (!autoFixApplied && _config.PdfCompilation?.ExperimentalLatexAutoFix == true && await TryApplyAutoFixesAsync(finalTexFile, inputBaseName)) {
                         Ui.Info("[EXPERIMENTELL] Kompiliere erneut mit den automatischen LaTeX-Korrekturen...", "LaTeX Auto-Fix");
-                        return await CompilePdfAsync(finalTexFile, baseName, targetFolder, stepPrefix, allowRetryOnFailure: true, autoFixApplied: true);
+                        return await CompilePdfAsync(finalTexFile, baseName, targetFolder, stepPrefix, allowRetryOnFailure: true, autoFixApplied: true, useOffsetNaming: resolvedOffsetNaming);
                     }
 
                     string originalBodyTex = await System.IO.File.ReadAllTextAsync(finalTexFile);
@@ -145,7 +146,7 @@ public partial class LatexRefinementSession {
                     for (int round = 1; round <= maxRounds; round++) {
                         Ui.Step($"Starte Reparatur-Runde {round} von {maxRounds}...", "AI PDF Fix Loop");
 
-                        var (roundSuccess, candidateBody, candidateLog) = await TryRepairFailedPdfBuildAsync(preambleText, originalBodyTex, currentBodyTex, currentLog, baseName, targetFolder, round);
+                        var (roundSuccess, candidateBody, candidateLog) = await TryRepairFailedPdfBuildAsync(preambleText, originalBodyTex, currentBodyTex, currentLog, baseName, targetFolder, round, resolvedOffsetNaming);
 
                         if (roundSuccess) {
                             anyRoundSucceeded = true;
@@ -402,7 +403,7 @@ public partial class LatexRefinementSession {
     /// <returns>Success, plus the candidate body and its compile log for the next round; both null when the
     /// answer was empty or rejected, so the next round retries the same input.</returns>
     private async Task<(bool Success, string? CandidateBody, string? CandidateLog)> TryRepairFailedPdfBuildAsync(
-        string preambleText, string originalBodyTex, string failedBodyTex, string compileLog, string baseName, string targetFolder, int roundNumber = 1) {
+        string preambleText, string originalBodyTex, string failedBodyTex, string compileLog, string baseName, string targetFolder, int roundNumber = 1, bool useOffsetNaming = true) {
         Ui.Step($"Schritt 4 Retry: PDF LaTeX Fix (-final-attempt, Runde #{roundNumber})", "LaTeX Fix");
         BackendParameters backendParams = _config.UseVertex ? _config.Step3LastRefinement.Vertex : _config.Step3LastRefinement.AiStudio;
 
@@ -431,8 +432,8 @@ public partial class LatexRefinementSession {
         requestConfig.ThinkingConfig = ThinkingConfigFactory.Build(
             backendParams.CurrentModel, backendParams.ThinkingBudget, backendParams.ThinkingLevel, thoughtSettings?.Enabled == true);
 
-        string noPreambleFileName = $"step5-{baseName}-offset-last_try{roundNumber}.tex";
-        string standaloneFileName = $"step5-{baseName}-offset-last_try{roundNumber}-main.tex";
+        string noPreambleFileName = StepOutputFileName("step5", baseName, $"last_try{roundNumber}", useOffsetNaming);
+        string standaloneFileName = $"{Path.GetFileNameWithoutExtension(noPreambleFileName)}-main.tex";
         string retryLogPath = Path.Combine(targetFolder, $"compile-log-step5-last_try{roundNumber}.txt");
 
         // The round's compile log is its existing log, but it is written only after the answer has
@@ -464,7 +465,7 @@ public partial class LatexRefinementSession {
             bodyOnlyText = DocumentTagsRegex().Replace(bodyOnlyText, "").Trim();
 
             if (!IsSafeRepairReplacement(originalBodyTex, bodyOnlyText, out string rejectReason)) {
-                string rejectedPath = Path.Combine(targetFolder, $"step5-{baseName}-offset-last_try{roundNumber}-rejected.tex");
+                string rejectedPath = Path.Combine(targetFolder, $"{Path.GetFileNameWithoutExtension(noPreambleFileName)}-rejected.tex");
                 await System.IO.File.WriteAllTextAsync(rejectedPath, bodyOnlyText);
                 Ui.Error($"Fix-Versuch #{roundNumber} verworfen: {rejectReason} Gespeichert unter: {Path.GetFileName(rejectedPath)}");
                 await thoughts.AppendAllToAsync(retryLogPath);
@@ -533,7 +534,8 @@ public partial class LatexRefinementSession {
                 RetryContext = outputFileName,
                 InitialBackoff = retryBackoff,
                 FirstChunkTimeout = AppConfig.FirstChunkTimeout,
-                HighDemandDelay = retryBackoff,
+                HighDemandDelay = _config.HighDemandDelaySecondsOverride is int hd && hd > 0 ? hd : retryBackoff,
+                MaxRetries = _config.MaxApiRetries is int mr && mr > 0 ? mr : null,
                 CancelledAsWarning = true,
                 EmptyAnswerRetries = 3,
                 IsComplete = text => text.Contains(RefinementCompleteMarker, StringComparison.OrdinalIgnoreCase),

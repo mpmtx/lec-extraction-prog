@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using LectureExtraction.ConsoleUi;
 using LectureExtraction.Infrastructure;
 
@@ -40,7 +41,8 @@ public sealed partial record LectureProgress(
     string? SpeechTex,
     string? FinalTex,
     string? Pdf,
-    long TmpBytes) {
+    long TmpBytes,
+    bool IsSinglePass = false) {
 
     public string Lecture => Path.GetFileName(Folder);
 
@@ -49,14 +51,14 @@ public sealed partial record LectureProgress(
         FinalTex != null ? LectureStage.Pdf :
         SpeechTex != null ? LectureStage.Polish :
         MergedTex != null ? LectureStage.Speech :
-        CombinedTex != null ? LectureStage.Merge :
+        CombinedTex != null ? (IsSinglePass ? LectureStage.Speech : LectureStage.Merge) :
         PartsCount > 0 ? LectureStage.Transcribe :
         LectureStage.NotStarted;
 
     /// <summary>The file the next refinement step or the PDF reads; null for transcription and when done.</summary>
     public string? NextInput => NextStage switch {
         LectureStage.Merge => CombinedTex,
-        LectureStage.Speech => MergedTex,
+        LectureStage.Speech => MergedTex ?? (IsSinglePass ? CombinedTex : null),
         LectureStage.Polish => SpeechTex,
         LectureStage.Pdf => FinalTex,
         _ => null
@@ -67,7 +69,7 @@ public sealed partial record LectureProgress(
         LectureStage.Done => "PDF fertig",
         LectureStage.Pdf => "Schritt 3 (Polish)",
         LectureStage.Polish => "Schritt 2 (Speech)",
-        LectureStage.Speech => "Schritt 1 (Merge)",
+        LectureStage.Speech => IsSinglePass && MergedTex == null ? "transkribiert (1 Teil)" : "Schritt 1 (Merge)",
         LectureStage.Merge => "transkribiert",
         LectureStage.Transcribe => PartsCount == 1 ? "1 Teil" : $"{PartsCount} Teile",
         _ => "leer"
@@ -88,12 +90,25 @@ public sealed partial record LectureProgress(
     public static LectureProgress Scan(string folder) {
         string lecture = Path.GetFileName(folder);
 
-        int partsCount = Directory.GetFiles(folder, "step1-*-part*.tex")
+        int partsCount = Directory.GetFiles(folder, "step1-*.tex")
             .Select(Path.GetFileName)
-            .Count(f => !f!.Contains("-offset", StringComparison.OrdinalIgnoreCase));
+            .Count(f => !IsSideFile(f!) && PartFileRegex().IsMatch(f!));
 
-        // Refinement reads the offset-corrected combined file when there is one (GenerateOffsetFiles).
-        string? combined = Newest(folder, "step1-*-all-offset*.tex") ?? Newest(folder, "step1-*-all*.tex");
+        // Refinement reads the offset-corrected combined file when there is one (GenerateOffsetFiles),
+        // or the single-pass output step1-<name>.tex (skipping the merge step).
+        string? combined = NewestMatching(folder, "step1-*.tex", CombinedOffsetStage1Regex())
+            ?? NewestMatching(folder, "step1-*.tex", CombinedRawStage1Regex());
+        string? singlePass = combined == null && partsCount == 0
+            ? Directory.GetFiles(folder, "step1-*.tex")
+                .Where(f => !IsSideFile(f) && !MultiPartStage1Regex().IsMatch(Path.GetFileName(f)))
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault()
+            : null;
+        bool isSinglePass = singlePass != null;
+        if (isSinglePass) {
+            partsCount = 1;
+            combined = singlePass;
+        }
 
         string? pdf = Directory.GetFiles(folder, "*.pdf")
             .FirstOrDefault(f => Path.GetFileName(f).Equals($"{lecture}.pdf", StringComparison.OrdinalIgnoreCase))
@@ -123,7 +138,8 @@ public sealed partial record LectureProgress(
             Newest(folder, "step3-*speech_refined*.tex"),
             Newest(folder, "step4-*final*.tex"),
             pdf,
-            tmpBytes);
+            tmpBytes,
+            isSinglePass);
     }
 
     /// <summary>
@@ -139,6 +155,12 @@ public sealed partial record LectureProgress(
     private static string? Newest(string folder, string pattern) =>
         Directory.GetFiles(folder, pattern)
             .Where(f => !IsSideFile(f))
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
+
+    private static string? NewestMatching(string folder, string pattern, Regex nameRegex) =>
+        Directory.GetFiles(folder, pattern)
+            .Where(f => !IsSideFile(f) && nameRegex.IsMatch(Path.GetFileName(f)))
             .OrderByDescending(File.GetLastWriteTimeUtc)
             .FirstOrDefault();
 
@@ -161,6 +183,18 @@ public sealed partial record LectureProgress(
     /// </summary>
     private static bool IsSideFile(string path) => SideFileRegex().IsMatch(Path.GetFileName(path));
 
-    [System.Text.RegularExpressions.GeneratedRegex(@"-(main|truncated|orig\d*|try\d+(-rejected)?)\.(tex|pdf)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
-    private static partial System.Text.RegularExpressions.Regex SideFileRegex();
+    [GeneratedRegex(@"-(main|truncated|orig\d*|try\d+(-rejected)?)\.(tex|pdf)$", RegexOptions.IgnoreCase)]
+    private static partial Regex SideFileRegex();
+
+    [GeneratedRegex(@"-part\d+(?:-copy-?\d+)?\.tex$", RegexOptions.IgnoreCase)]
+    private static partial Regex PartFileRegex();
+
+    [GeneratedRegex(@"-all-offset(?:-copy-?\d+)?\.tex$", RegexOptions.IgnoreCase)]
+    private static partial Regex CombinedOffsetStage1Regex();
+
+    [GeneratedRegex(@"-all(?:-copy-?\d+)?\.tex$", RegexOptions.IgnoreCase)]
+    private static partial Regex CombinedRawStage1Regex();
+
+    [GeneratedRegex(@"-(?:part\d+(?:-offset)?|all(?:-offset)?)(?:-copy-?\d+)?\.tex$", RegexOptions.IgnoreCase)]
+    private static partial Regex MultiPartStage1Regex();
 }

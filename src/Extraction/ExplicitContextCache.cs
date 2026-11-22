@@ -47,15 +47,15 @@ public sealed class ExplicitContextCache(Client client, VertexAutoExtractionConf
         if (hasSys) sysParts.Add(new() { Text = systemInstructionText });
         var cacheContents = new List<Content>();
         if (hasHist) {
-            var textOnly = historyParts.Where(p => p.FileData == null && p.InlineData == null && !string.IsNullOrEmpty(p.Text)).ToList();
-            var nonText = historyParts.Where(p => p.FileData != null || p.InlineData != null).ToList();
+            var (textOnly, nonSystem) = SystemInstructionTextBuilder.PartitionForTextOnlySystemInstruction(historyParts);
             sysParts.AddRange(textOnly);
-            if (nonText.Count > 0) {
-                cacheContents.Add(new() { Role = "user", Parts = nonText });
+            if (nonSystem.Count > 0) {
+                cacheContents.Add(new() { Role = "user", Parts = nonSystem });
             }
         }
 
-        string combinedChecksum = ContextCacheStateManager.ComputeChecksum(systemInstructionText + (hasHist ? $"_hist_{historyParts.Count}" : ""));
+        string combinedChecksum = ContextCacheStateManager.ComputeChecksum(
+            systemInstructionText + (hasHist ? $"_hist_{BuildHistoryChecksumPayload(historyParts)}" : ""));
         var savedState = ContextCacheStateManager.LoadState(ContextCacheStateManager.StateFileVertex);
 
         bool match = ContextCacheStateManager.MatchesConfig(
@@ -146,5 +146,22 @@ public sealed class ExplicitContextCache(Client client, VertexAutoExtractionConf
             Name = null;
             await InitializeAsync(systemInstructionText, historyParts);
         }
+    }
+
+    private static string BuildHistoryChecksumPayload(IReadOnlyList<Part> historyParts) {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(historyParts.Count).Append(':');
+        foreach (var part in historyParts) {
+            if (!string.IsNullOrEmpty(part.Text)) {
+                sb.Append("T:").Append(part.Text).Append('|');
+            }
+            else if (part.FileData != null) {
+                sb.Append("F:").Append(part.FileData.FileUri).Append('|');
+            }
+            else if (part.InlineData != null) {
+                sb.Append("I:").Append(part.InlineData.MimeType).Append(':').Append(part.InlineData.Data?.Length ?? 0).Append('|');
+            }
+        }
+        return sb.ToString();
     }
 }

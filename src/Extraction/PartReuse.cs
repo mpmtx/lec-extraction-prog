@@ -22,15 +22,25 @@ namespace LectureExtraction.Extraction;
 /// </summary>
 public static partial class PartReuse {
     /// <summary>
-    /// Returns the newest of <c>&lt;texBaseName&gt;-partN.tex</c> and its <c>-copy-K</c> siblings, or
-    /// null when there is none. On equal write times the original wins over its copies.
+    /// [AI Context] Base filename stem for one transcribed Stage 1 output: <c>{texBaseName}</c> for
+    /// single-pass uploads (<paramref name="totalParts"/> == 1) and <c>{texBaseName}-part{partNumber}</c>
+    /// for multi-part uploads.
+    /// [Human] Dateinamen-Stamm eines transkribierten Teils (ohne -part1 bei Einzelteil-Uploads).
     /// </summary>
-    public static string? FindNewestPartFile(string outputFolder, string texBaseName, int partNumber) {
+    public static string PartStem(string texBaseName, int partNumber, int totalParts = 0) =>
+        totalParts == 1 ? texBaseName : $"{texBaseName}-part{partNumber}";
+
+    /// <summary>
+    /// Returns the newest of <c>&lt;texBaseName&gt;-partN.tex</c> (or <c>&lt;texBaseName&gt;.tex</c> when
+    /// <paramref name="totalParts"/> == 1) and its <c>-copy-K</c> siblings, or null when there is none.
+    /// On equal write times the original wins over its copies.
+    /// </summary>
+    public static string? FindNewestPartFile(string outputFolder, string texBaseName, int partNumber, int totalParts = 0) {
         if (!Directory.Exists(outputFolder)) {
             return null;
         }
 
-        string stem = $"{texBaseName}-part{partNumber}";
+        string stem = PartStem(texBaseName, partNumber, totalParts);
         return Directory.EnumerateFiles(outputFolder, $"{stem}*.tex")
             .Where(path => IsPartFileOrCopy(Path.GetFileNameWithoutExtension(path), stem))
             .OrderByDescending(File.GetLastWriteTimeUtc)
@@ -43,8 +53,8 @@ public static partial class PartReuse {
     /// again: the newest file from <see cref="FindNewestPartFile"/>, if it was written within
     /// <paramref name="window"/>. Otherwise null, and the part is transcribed.
     /// </summary>
-    public static string? FindReusablePart(string outputFolder, string texBaseName, int partNumber, TimeSpan window) {
-        string? newest = FindNewestPartFile(outputFolder, texBaseName, partNumber);
+    public static string? FindReusablePart(string outputFolder, string texBaseName, int partNumber, TimeSpan window, int totalParts = 0) {
+        string? newest = FindNewestPartFile(outputFolder, texBaseName, partNumber, totalParts);
         return newest != null && DateTime.UtcNow - File.GetLastWriteTimeUtc(newest) <= window ? newest : null;
     }
 

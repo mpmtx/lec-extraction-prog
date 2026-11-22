@@ -17,7 +17,7 @@ public class VertexAutoExtractionConfig : IAutoExtractionConfig {
         Temperature = 0.35f,
         TopP = 0.95f,
         TopK = 40,
-        MaxOutputTokens = 65535
+        MaxOutputTokens = 300000
     };
     public ModelSelection ModelSelection { get; set; } = new();
     public ContextCacheSettings ContextCaching { get; set; } = new() {
@@ -120,6 +120,14 @@ public class VertexAutoExtractionConfig : IAutoExtractionConfig {
     /// [Human] Wartezeit in Sekunden, wenn das Modell überlastet ist ("high demand").
     /// </summary>
     public int HighDemandDelaySeconds { get; set; } = 180;
+
+    /// <summary>
+    /// [AI Context] Runtime-only override for maximum consecutive failed API attempts before giving up.
+    /// Defaults to <see cref="LectureExtraction.GoogleAi.ApiRetryPolicy.DefaultMaxRetries"/> (5).
+    /// [Human] Maximale Fehlversuche pro Anfrage (nur Laufzeit-Override per CLI).
+    /// </summary>
+    [Newtonsoft.Json.JsonIgnore]
+    public int MaxApiRetries { get; set; } = LectureExtraction.GoogleAi.ApiRetryPolicy.DefaultMaxRetries;
 
     /// <summary>
     /// [AI Context] While the internet is down (the Google host does not resolve or has no route), seconds between two

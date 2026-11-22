@@ -57,13 +57,14 @@
         "Temperature": 0.4,
         "TopP": 0.95,
         "TopK": 40,
-        "MaxOutputTokens": 65535,
+        "MaxOutputTokens": 300000,
         "ThinkingBudget": 32765,
         "ThinkingLevel": "MEDIUM"
       },
       "ModelSelection": {
         "Available": [
           "gemini-3.8-flash",
+          "gemini-4-hydrogen",
           "gemini-3.7-flash",
           "gemini-3.6-flash",
           "gemini-3.5-flash",
@@ -83,13 +84,14 @@
         "Temperature": 0.35,
         "TopP": 0.93,
         "TopK": 35,
-        "MaxOutputTokens": 65535,
+        "MaxOutputTokens": 300000,
         "ThinkingBudget": 32765,
         "ThinkingLevel": "MEDIUM"
       },
       "ModelSelection": {
         "Available": [
           "gemini-3.8-flash",
+          "gemini-4-hydrogen",
           "gemini-3.7-flash",
           "gemini-3.6-flash",
           "gemini-3.5-flash",
@@ -125,13 +127,14 @@
         "Temperature": 0.35,
         "TopP": 0.9,
         "TopK": 10,
-        "MaxOutputTokens": 65535,
+        "MaxOutputTokens": 300000,
         "ThinkingBudget": 4096,
         "ThinkingLevel": "MEDIUM"
       },
       "ModelSelection": {
         "Available": [
           "gemini-3.8-flash",
+          "gemini-4-hydrogen",
           "gemini-3.7-flash",
           "gemini-3.6-flash",
           "gemini-3.5-flash",
@@ -151,13 +154,14 @@
         "Temperature": 0.35,
         "TopP": 0.9,
         "TopK": 10,
-        "MaxOutputTokens": 65535,
+        "MaxOutputTokens": 300000,
         "ThinkingBudget": 4096,
         "ThinkingLevel": "MEDIUM"
       },
       "ModelSelection": {
         "Available": [
           "gemini-3.8-flash",
+          "gemini-4-hydrogen",
           "gemini-3.7-flash",
           "gemini-3.6-flash",
           "gemini-3.5-flash",
@@ -193,13 +197,14 @@
         "Temperature": 0.35,
         "TopP": 0.9,
         "TopK": 10,
-        "MaxOutputTokens": 65535,
+        "MaxOutputTokens": 300000,
         "ThinkingBudget": 4096,
         "ThinkingLevel": "MEDIUM"
       },
       "ModelSelection": {
         "Available": [
           "gemini-3.8-flash",
+          "gemini-4-hydrogen",
           "gemini-3.7-flash",
           "gemini-3.6-flash",
           "gemini-3.5-flash",
@@ -219,13 +224,14 @@
         "Temperature": 0.35,
         "TopP": 0.9,
         "TopK": 10,
-        "MaxOutputTokens": 65535,
+        "MaxOutputTokens": 300000,
         "ThinkingBudget": 4096,
         "ThinkingLevel": "MEDIUM"
       },
       "ModelSelection": {
         "Available": [
           "gemini-3.8-flash",
+          "gemini-4-hydrogen",
           "gemini-3.7-flash",
           "gemini-3.6-flash",
           "gemini-3.5-flash",

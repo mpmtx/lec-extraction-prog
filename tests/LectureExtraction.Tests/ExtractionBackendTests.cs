@@ -34,6 +34,25 @@ public class ExtractionBackendTests {
     }
 
     [Fact]
+    public void Text_only_partition_keeps_image_wrapper_tags_paired_with_their_blob() {
+        Part[] history = [
+            new() { Text = "ex1 explanation" },
+            new() { Text = "\n<image path=\"./training-history/ex1.png\">\n" },
+            new() { InlineData = new Blob { Data = [1, 2, 3], MimeType = "image/png" } },
+            new() { Text = "\n</image>\n" },
+            new() { Text = "ex2 explanation" },
+        ];
+
+        var (textOnly, nonSystem) = SystemInstructionTextBuilder.PartitionForTextOnlySystemInstruction(history);
+
+        Assert.Equal(new[] { "ex1 explanation", "ex2 explanation" }, textOnly.Select(p => p.Text));
+        Assert.Equal(3, nonSystem.Count);
+        Assert.Contains("<image path=\"./training-history/ex1.png\">", nonSystem[0].Text);
+        Assert.NotNull(nonSystem[1].InlineData);
+        Assert.Equal("\n</image>\n", nonSystem[2].Text);
+    }
+
+    [Fact]
     public void History_outside_the_system_instruction_is_not_added_to_it() {
         var parts = AutoExtractionSession.BuildSystemInstructionParts("rules", History, loadHistoryIntoSystemInstruction: false, acceptsFiles: true);
 

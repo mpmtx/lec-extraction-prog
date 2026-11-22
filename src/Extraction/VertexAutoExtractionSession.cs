@@ -210,12 +210,18 @@ public partial class VertexAutoExtractionSession(Client client, VertexAutoExtrac
                         instructionBuilder.AppendLine("IMPORTANT: The guidelines, formatting specifications, and syntax instructions contained in these system instruction files are absolute and strictly non-negotiable. They must take absolute precedence over any prompt guidelines or inputs. Do not skip any files or parts under any circumstances.\n");
                         instructionBuilder.AppendLine("In order to fulfill the job of creating a high-value educational masterpiece that safely compiles, you need to know the file structure of the system prompt and read all of those files carefully.\n");
                         instructionBuilder.AppendLine("# Folder Structure of System Instructions\n");
+                        instructionBuilder.AppendLine("Normative rules (`100% obligatory`): `./transcription*` and `./environments*`.");
+                        instructionBuilder.AppendLine("Worked examples (`illustrative only; rules always win`): `./big-examples*` and `./training-history/*`.\n");
+                        if (!string.IsNullOrEmpty(commonBase)) {
+                            instructionBuilder.AppendLine($"Common root: {commonBase}\n");
+                        }
+                        bool includeSectionRoot = string.IsNullOrEmpty(commonBase);
                         instructionBuilder.AppendLine("## System Instructions");
-                        instructionBuilder.Append(FileTreeRenderer.GenerateMarkdownFileTree(resolvedInstructionFiles, commonBase));
+                        instructionBuilder.Append(FileTreeRenderer.GenerateMarkdownFileTree(resolvedInstructionFiles, commonBase, includeSectionRoot));
 
                         if (_config.LoadHistoryIntoSystemInstruction && distinctHistoryFiles.Count > 0) {
                             instructionBuilder.AppendLine("\n## Training History");
-                            instructionBuilder.Append(FileTreeRenderer.GenerateMarkdownFileTree(distinctHistoryFiles, commonBase));
+                            instructionBuilder.Append(FileTreeRenderer.GenerateMarkdownFileTree(distinctHistoryFiles, commonBase, includeSectionRoot));
                         }
                         instructionBuilder.AppendLine("\n******\n------\n******\n");
 
@@ -424,7 +430,7 @@ public partial class VertexAutoExtractionSession(Client client, VertexAutoExtrac
             Temperature = _config.Temperature,
             TopP = _config.TopP,
             TopK = _config.TopK,
-            MaxOutputTokens = _config.MaxOutputTokens,
+            MaxOutputTokens = ModelCapabilities.ResolveMaxOutputTokens(_config.CurrentModel, _config.MaxOutputTokens),
             AutomaticContinuation = false
         };
 
@@ -438,11 +444,10 @@ public partial class VertexAutoExtractionSession(Client client, VertexAutoExtrac
             var sysParts = new List<Part>();
             if (!string.IsNullOrWhiteSpace(_systemInstructionText)) sysParts.Add(new() { Text = _systemInstructionText });
             if (_config.LoadHistoryIntoSystemInstruction && _historyParts.Count > 0) {
-                var textOnly = _historyParts.Where(p => p.FileData == null && p.InlineData == null && !string.IsNullOrEmpty(p.Text)).ToList();
-                var nonText = _historyParts.Where(p => p.FileData != null || p.InlineData != null).ToList();
+                var (textOnly, nonSystem) = SystemInstructionTextBuilder.PartitionForTextOnlySystemInstruction(_historyParts);
                 sysParts.AddRange(textOnly);
-                if (nonText.Count > 0 && _sessionPreamble.Count == 0) {
-                    _sessionPreamble.Add(new Content { Role = "user", Parts = nonText });
+                if (nonSystem.Count > 0 && _sessionPreamble.Count == 0) {
+                    _sessionPreamble.Add(new Content { Role = "user", Parts = nonSystem });
                 }
             }
             if (sysParts.Count > 0) {
@@ -591,24 +596,36 @@ public partial class VertexAutoExtractionSession(Client client, VertexAutoExtrac
         Task<SegmentUpload>? pendingVideoUploadTask = null;
         Task<List<Part>>? pendingAudioUploadTask = null;
 
-        for (int i = 0; i < partsWithTimes.Count; i++) {
+        string singlePartOutputFile = "";
+        int totalParts = partsWithTimes.Count;
+        bool isSinglePart = totalParts <= 1;
+
+        for (int i = 0; i < totalParts; i++) {
             string safePartPath = partsWithTimes[i].FilePath;
             double partStartTimeSeconds = partsWithTimes[i].StartTimeSeconds;
-            string targetPartPath = Path.Combine(fileSpecificOutputFolder, $"{baseName}-part{i + 1}.tex");
+            string partStem = PartReuse.PartStem(baseName, i + 1, totalParts);
+            string targetPartPath = Path.Combine(fileSpecificOutputFolder, $"{partStem}.tex");
 
-            Ui.Step($"Verarbeite Teil {i + 1}/{partsWithTimes.Count}: {Path.GetFileName(safePartPath)}");
+            Ui.Step(isSinglePart
+                ? $"Verarbeite Einzelteil-Upload: {Path.GetFileName(safePartPath)}"
+                : $"Verarbeite Teil {i + 1}/{totalParts}: {Path.GetFileName(safePartPath)}");
             if (System.IO.File.Exists(targetPartPath) && (DateTime.Now - System.IO.File.GetLastWriteTime(targetPartPath)) <= cacheDuration) {
                 Ui.Info($"Vorhandene LaTeX-Datei gefunden: {Path.GetFileName(targetPartPath)}. Überspringe API-Extraktion für diesen Teil.", "Resume");
                 string existingTex = await System.IO.File.ReadAllTextAsync(targetPartPath);
                 generatedTexFiles.Add(targetPartPath);
 
-                var (cachedHeader, cachedBody) = TexDocumentWriter.SplitHeaderLayers(existingTex);
-                string cachedSummary = TexDocumentWriter.SummarizePartHeader(cachedHeader);
-                partSummaries.Add(cachedSummary.Length > 0 ? $"{cachedSummary} | aus Cache" : "aus Cache");
-                string cachedSeparator = TexDocumentWriter.BuildPartSeparator(i + 1, cachedHeader, fromCache: true);
-                fullOutputTextRaw += cachedSeparator + cachedBody;
-                if (_config.GenerateOffsetFiles) {
-                    fullOutputTextOffsetted += cachedSeparator + LatexTimestampAdjuster.AdjustTimestamps(cachedBody, partStartTimeSeconds);
+                if (isSinglePart) {
+                    singlePartOutputFile = targetPartPath;
+                }
+                else {
+                    var (cachedHeader, cachedBody) = TexDocumentWriter.SplitHeaderLayers(existingTex);
+                    string cachedSummary = TexDocumentWriter.SummarizePartHeader(cachedHeader);
+                    partSummaries.Add(cachedSummary.Length > 0 ? $"{cachedSummary} | aus Cache" : "aus Cache");
+                    string cachedSeparator = TexDocumentWriter.BuildPartSeparator(i + 1, cachedHeader, fromCache: true);
+                    fullOutputTextRaw += cachedSeparator + cachedBody;
+                    if (_config.GenerateOffsetFiles) {
+                        fullOutputTextOffsetted += cachedSeparator + LatexTimestampAdjuster.AdjustTimestamps(cachedBody, partStartTimeSeconds);
+                    }
                 }
                 audioTrackExtractor.EnsureStarted(_config.GenerateAudioFile);
                 continue;
@@ -696,41 +713,57 @@ public partial class VertexAutoExtractionSession(Client client, VertexAutoExtrac
                 }
             }
 
-            segmentTranscript = await TranscribeSegmentToLatexAsync(safePartPath, i + 1, file, parsedPrompt, attachmentParts, generatedTexFiles, targetPartPath);
+            segmentTranscript = await TranscribeSegmentToLatexAsync(safePartPath, i + 1, file, parsedPrompt, attachmentParts, generatedTexFiles, targetPartPath, totalParts);
 
             fileTotalTokens += segmentTranscript.Usage;
 
             if (!string.IsNullOrWhiteSpace(segmentTranscript.LatexBody)) {
                 string cleanTex = LatexResponseCleaner.CleanLatexResponse(segmentTranscript.LatexBody);
 
-                string partHeader = TexDocumentWriter.BuildPartHeader(
-                    partNumber: i + 1,
-                    totalParts: partsWithTimes.Count,
-                    sourcePartFileName: Path.GetFileName(safePartPath),
-                    partStartTimeSeconds: partStartTimeSeconds,
-                    usage: segmentTranscript.Usage,
-                    model: _config.CurrentModel,
-                    generation: _config.Generation,
-                    thoughtsFileName: Path.GetFileName(segmentTranscript.ThoughtsFile));
-                partSummaries.Add(TexDocumentWriter.SummarizePartHeader(partHeader));
-
-                string partSeparator = TexDocumentWriter.BuildPartSeparator(i + 1, partHeader, fromCache: false);
-                fullOutputTextRaw += partSeparator + cleanTex;
-                if (_config.GenerateOffsetFiles) {
-                    fullOutputTextOffsetted += partSeparator + LatexTimestampAdjuster.AdjustTimestamps(cleanTex, partStartTimeSeconds);
+                if (isSinglePart) {
+                    string uniqueTargetPartPath = ExtractionHelpers.ResolveNonClashingTexPath(targetPartPath);
+                    string singlePartHeader = TexDocumentWriter.BuildSinglePartHeader(
+                        outputFileName: Path.GetFileName(uniqueTargetPartPath),
+                        sourceSegmentFileName: Path.GetFileName(safePartPath),
+                        originalVideoFileName: Path.GetFileName(file),
+                        usage: segmentTranscript.Usage,
+                        model: _config.CurrentModel,
+                        generation: _config.Generation,
+                        thoughtsFileName: Path.GetFileName(segmentTranscript.ThoughtsFile));
+                    await System.IO.File.WriteAllTextAsync(uniqueTargetPartPath, singlePartHeader + "\n" + cleanTex);
+                    singlePartOutputFile = uniqueTargetPartPath;
+                    generatedTexFiles.Add(uniqueTargetPartPath);
                 }
+                else {
+                    string partHeader = TexDocumentWriter.BuildPartHeader(
+                        partNumber: i + 1,
+                        totalParts: partsWithTimes.Count,
+                        sourcePartFileName: Path.GetFileName(safePartPath),
+                        partStartTimeSeconds: partStartTimeSeconds,
+                        usage: segmentTranscript.Usage,
+                        model: _config.CurrentModel,
+                        generation: _config.Generation,
+                        thoughtsFileName: Path.GetFileName(segmentTranscript.ThoughtsFile));
+                    partSummaries.Add(TexDocumentWriter.SummarizePartHeader(partHeader));
 
-                string uniqueTargetPartPath = ExtractionHelpers.ResolveNonClashingTexPath(targetPartPath);
-                await System.IO.File.WriteAllTextAsync(uniqueTargetPartPath, partHeader + "\n" + cleanTex);
+                    string partSeparator = TexDocumentWriter.BuildPartSeparator(i + 1, partHeader, fromCache: false);
+                    fullOutputTextRaw += partSeparator + cleanTex;
+                    if (_config.GenerateOffsetFiles) {
+                        fullOutputTextOffsetted += partSeparator + LatexTimestampAdjuster.AdjustTimestamps(cleanTex, partStartTimeSeconds);
+                    }
 
-                if (_config.GenerateOffsetFiles) {
-                    string offsettedPartContent = LatexTimestampAdjuster.AdjustTimestamps(cleanTex, partStartTimeSeconds);
-                    string targetPartPathOffset = Path.Combine(fileSpecificOutputFolder, $"{baseName}-part{i + 1}-offset.tex");
-                    string uniqueTargetPartPathOffset = ExtractionHelpers.ResolveNonClashingTexPath(targetPartPathOffset);
-                    await System.IO.File.WriteAllTextAsync(uniqueTargetPartPathOffset, partHeader + "\n" + offsettedPartContent);
-                    Ui.Success($"Offset-korrigierter Teil gespeichert unter: {Path.GetFileName(uniqueTargetPartPathOffset)}");
+                    string uniqueTargetPartPath = ExtractionHelpers.ResolveNonClashingTexPath(targetPartPath);
+                    await System.IO.File.WriteAllTextAsync(uniqueTargetPartPath, partHeader + "\n" + cleanTex);
+
+                    if (_config.GenerateOffsetFiles) {
+                        string offsettedPartContent = LatexTimestampAdjuster.AdjustTimestamps(cleanTex, partStartTimeSeconds);
+                        string targetPartPathOffset = Path.Combine(fileSpecificOutputFolder, $"{baseName}-part{i + 1}-offset.tex");
+                        string uniqueTargetPartPathOffset = ExtractionHelpers.ResolveNonClashingTexPath(targetPartPathOffset);
+                        await System.IO.File.WriteAllTextAsync(uniqueTargetPartPathOffset, partHeader + "\n" + offsettedPartContent);
+                        Ui.Success($"Offset-korrigierter Teil gespeichert unter: {Path.GetFileName(uniqueTargetPartPathOffset)}");
+                    }
+                    generatedTexFiles.Add(uniqueTargetPartPath);
                 }
-                generatedTexFiles.Add(uniqueTargetPartPath);
             }
             else {
                 Ui.Error($"Die Verarbeitung von Teil {i + 1} für '{Path.GetFileName(file)}' ist fehlgeschlagen. Breche die Verarbeitung für diese Datei ab.");
@@ -741,29 +774,37 @@ public partial class VertexAutoExtractionSession(Client client, VertexAutoExtrac
         }
 
         if (fileProcessingSuccess) {
-            string targetFilePath = Path.Combine(fileSpecificOutputFolder, $"{baseName}-all.tex");
-            string targetFilePathOffset = Path.Combine(fileSpecificOutputFolder, $"{baseName}-all-offset.tex");
+            string refinementTargetFile;
+            bool singlePass = isSinglePart && !string.IsNullOrEmpty(singlePartOutputFile);
+            if (singlePass) {
+                refinementTargetFile = singlePartOutputFile;
+                Ui.Success($"Fertig mit {Path.GetFileName(file)}. Das komplette Einzelteil-Dokument liegt hier: {refinementTargetFile}", "AutoExtraction");
+            }
+            else {
+                string targetFilePath = Path.Combine(fileSpecificOutputFolder, $"{baseName}-all.tex");
+                string targetFilePathOffset = Path.Combine(fileSpecificOutputFolder, $"{baseName}-all-offset.tex");
 
-            string Header(string outputPath) => TexDocumentWriter.BuildCombinedHeader(
-                outputFileName: Path.GetFileName(outputPath),
-                sourceFileName: Path.GetFileName(file),
-                totalParts: partsWithTimes.Count,
-                runUsage: fileTotalTokens,
-                model: _config.CurrentModel,
-                generation: _config.Generation,
-                partSummaries: partSummaries);
+                string Header(string outputPath) => TexDocumentWriter.BuildCombinedHeader(
+                    outputFileName: Path.GetFileName(outputPath),
+                    sourceFileName: Path.GetFileName(file),
+                    totalParts: partsWithTimes.Count,
+                    runUsage: fileTotalTokens,
+                    model: _config.CurrentModel,
+                    generation: _config.Generation,
+                    partSummaries: partSummaries);
 
-            string uniqueTargetFilePath = ExtractionHelpers.ResolveNonClashingTexPath(targetFilePath);
-            await System.IO.File.WriteAllTextAsync(uniqueTargetFilePath, Header(uniqueTargetFilePath) + fullOutputTextRaw);
-            Ui.Success($"Fertig mit {Path.GetFileName(file)}. Das komplette Dokument liegt hier: {uniqueTargetFilePath}", "AutoExtraction");
+                string uniqueTargetFilePath = ExtractionHelpers.ResolveNonClashingTexPath(targetFilePath);
+                await System.IO.File.WriteAllTextAsync(uniqueTargetFilePath, Header(uniqueTargetFilePath) + fullOutputTextRaw);
+                Ui.Success($"Fertig mit {Path.GetFileName(file)}. Das komplette Dokument liegt hier: {uniqueTargetFilePath}", "AutoExtraction");
 
-            string refinementTargetFile = uniqueTargetFilePath;
+                refinementTargetFile = uniqueTargetFilePath;
 
-            if (_config.GenerateOffsetFiles) {
-                string uniqueTargetFilePathOffset = ExtractionHelpers.ResolveNonClashingTexPath(targetFilePathOffset);
-                await System.IO.File.WriteAllTextAsync(uniqueTargetFilePathOffset, Header(uniqueTargetFilePathOffset) + fullOutputTextOffsetted);
-                Ui.Success($"Fertig mit {Path.GetFileName(file)}. Das offset-korrigierte Dokument liegt hier: {uniqueTargetFilePathOffset}", "AutoExtraction");
-                refinementTargetFile = uniqueTargetFilePathOffset;
+                if (_config.GenerateOffsetFiles) {
+                    string uniqueTargetFilePathOffset = ExtractionHelpers.ResolveNonClashingTexPath(targetFilePathOffset);
+                    await System.IO.File.WriteAllTextAsync(uniqueTargetFilePathOffset, Header(uniqueTargetFilePathOffset) + fullOutputTextOffsetted);
+                    Ui.Success($"Fertig mit {Path.GetFileName(file)}. Das offset-korrigierte Dokument liegt hier: {uniqueTargetFilePathOffset}", "AutoExtraction");
+                    refinementTargetFile = uniqueTargetFilePathOffset;
+                }
             }
 
             if (audioTrackExtractor.PendingTask != null) {
@@ -771,14 +812,15 @@ public partial class VertexAutoExtractionSession(Client client, VertexAutoExtrac
                 await audioTrackExtractor.PendingTask;
             }
 
-            if (_latexRefinementConfig != null) {
-                _latexRefinementConfig.UseVertex = AppConfig.IsVertexAiEnabled;
-                if (!_config.NumberOfParts.IsAuto && (int)_config.NumberOfParts <= 1) {
-                    Ui.Info($"NumberOfParts = {_config.NumberOfParts} (<= 1). Deaktiviere Schritt 1 (Merger) für die LatexRefinementSession.", "AutoExtraction");
-                    _latexRefinementConfig.Step1MergeAndTimestamp.Enabled = false;
+            var refinementConfig = _latexRefinementConfig?.Clone();
+            if (refinementConfig != null) {
+                refinementConfig.UseVertex = AppConfig.IsVertexAiEnabled;
+                if (totalParts <= 1 && refinementConfig.Step1MergeAndTimestamp != null) {
+                    Ui.Info($"Einteilige Transkription ({totalParts} Teil). Deaktiviere Schritt 1 (Merger) für die LatexRefinementSession.", "AutoExtraction");
+                    refinementConfig.Step1MergeAndTimestamp.Enabled = false;
                 }
             }
-            Client refinementClient = GoogleAiClientBuilder.BuildVertexClient(_latexRefinementConfig?.VertexProjectId ?? "", _latexRefinementConfig?.VertexLocation ?? "");
+            Client refinementClient = GoogleAiClientBuilder.BuildVertexClient(refinementConfig?.VertexProjectId ?? "", refinementConfig?.VertexLocation ?? "");
 
             var aacFiles = Directory.GetFiles(fileSpecificOutputFolder, "*.aac");
             string audioFilePath = aacFiles.OrderByDescending(f => System.IO.File.GetLastWriteTime(f)).FirstOrDefault()
@@ -790,10 +832,12 @@ public partial class VertexAutoExtractionSession(Client client, VertexAutoExtrac
                 preUploadedAudioParts = await pendingAudioUploadTask;
             }
 
-            Ui.Step($"Starte automatischen Refinement-Prozess für die {(_config.GenerateOffsetFiles ? "offset-korrigierte " : "")}Datei...");
+            Ui.Step(singlePass
+                ? "Starte automatischen Refinement-Prozess (ohne Merge-Schritt)..."
+                : $"Starte automatischen Refinement-Prozess für die {(_config.GenerateOffsetFiles ? "offset-korrigierte " : "")}Datei...");
             var refinementSession = new LatexRefinementSession(
                 refinementClient,
-                RefinementOptions.ForFile(_latexRefinementConfig!, refinementTargetFile, _config, audioFilePath, preUploadedAudioParts));
+                RefinementOptions.ForFile(refinementConfig!, refinementTargetFile, _config, audioFilePath, preUploadedAudioParts));
 
             await refinementSession.StartAsync();
         }

@@ -127,10 +127,12 @@ public partial class LatexRefinementSession {
 
         // Step 1: Merge and Timestamp Control
         int partsCount = ResolvePartsCount(currentFiles);
+        bool useOffsetNaming = UsesOffsetFileNaming(currentFiles[0], partsCount);
+        bool isSinglePart = partsCount <= 1;
         if (_config.Step1MergeAndTimestamp.Enabled) {
             Ui.Step("LaTeX Refinement - Schritt 1: Merge & Zeitstempel-Abgleich");
-            if (partsCount <= 1) {
-                Ui.Info($"NumberOfParts = {partsCount} (<= 1). Ein Merger ist nicht erforderlich. Überspringe Schritt 1.");
+            if (isSinglePart) {
+                Ui.Info($"Einteilige Transkription ({partsCount} Teil). Ein Merger ist nicht erforderlich. Überspringe Schritt 1.");
             }
             else {
                 string? step1Output = await MergeSegmentsAndAlignTimestampsAsync(currentFiles, _audioFilePath, baseName, targetFolder, partsCount);
@@ -139,13 +141,14 @@ public partial class LatexRefinementSession {
                     return false;
                 }
                 currentFiles = [step1Output];
+                useOffsetNaming = UsesOffsetFileNaming(currentFiles[0], partsCount);
             }
         }
 
         // Step 2: Speech Refinement
         if (_config.Step2SpeechRefinement.Enabled) {
             Ui.Step("LaTeX Refinement - Schritt 2: Textkorrektur & Grammatik-Polishing");
-            string? step2Output = await RefineAgainstSpeechAsync(currentFiles[0], _audioFilePath, baseName, targetFolder);
+            string? step2Output = await RefineAgainstSpeechAsync(currentFiles[0], _audioFilePath, baseName, targetFolder, useOffsetNaming, isSinglePart);
             if (step2Output == null) {
                 Ui.Error("Schritt 2 (Speech Refinement) fehlgeschlagen. Breche Pipeline ab.", "LaTeX Refinement");
                 return false;
@@ -157,7 +160,7 @@ public partial class LatexRefinementSession {
         if (_config.Step3LastRefinement.Enabled) {
             Ui.Step("LaTeX Refinement - Schritt 3: Endprüfung & Validierung");
             Ui.Info("Führe Probe-Kompilierung des aktuellen Dokuments aus...");
-            bool alreadyCompiles = await CompilePdfAsync(currentFiles[0], baseName, targetFolder, "step3-precheck", allowRetryOnFailure: false);
+            bool alreadyCompiles = await CompilePdfAsync(currentFiles[0], baseName, targetFolder, "step3-precheck", allowRetryOnFailure: false, useOffsetNaming: useOffsetNaming);
 
             string compileLogPath = Path.Combine(targetFolder, "step3-precheck-compile-log.txt");
             string compileLog = System.IO.File.Exists(compileLogPath) ? await System.IO.File.ReadAllTextAsync(compileLogPath) : "";
@@ -174,7 +177,7 @@ public partial class LatexRefinementSession {
             CleanupPrecheckFiles(targetFolder, currentFiles[0], "step3-precheck", alreadyCompiles);
 
             Ui.Info("Starte finalen Durchlauf für Schritt 3 (Last Refinement)...");
-            var finalOutput = await ApplyFinalPolishAsync(currentFiles[0], baseName, targetFolder, alreadyCompiles, compileLog);
+            var finalOutput = await ApplyFinalPolishAsync(currentFiles[0], baseName, targetFolder, alreadyCompiles, compileLog, useOffsetNaming);
             if (finalOutput == null) {
                 Ui.Error("Schritt 3 (Last Refinement) fehlgeschlagen.", "LaTeX Refinement");
                 allStepsSucceeded = false;
@@ -190,7 +193,7 @@ public partial class LatexRefinementSession {
         // compile an intermediate file and start a paid repair loop on it.
         if (_config.PdfCompilation?.Enabled == true) {
             Ui.Step("LaTeX Refinement - Schritt 4: PDF Generierung & Validierung");
-            if (!await CompilePdfAsync(currentFiles[0], baseName, targetFolder)) {
+            if (!await CompilePdfAsync(currentFiles[0], baseName, targetFolder, useOffsetNaming: useOffsetNaming)) {
                 allStepsSucceeded = false;
             }
         }
@@ -220,11 +223,59 @@ public partial class LatexRefinementSession {
             return inputFiles.Length;
         }
 
-        int fromDocument = System.IO.File.Exists(inputFiles[0])
-            ? TexDocumentWriter.CountParts(System.IO.File.ReadAllText(inputFiles[0]))
-            : 0;
+        if (System.IO.File.Exists(inputFiles[0])) {
+            string text = System.IO.File.ReadAllText(inputFiles[0]);
+            int fromDocument = TexDocumentWriter.CountParts(text);
+            if (fromDocument > 0) return fromDocument;
+            if (TexDocumentWriter.HasSinglePartHeader(text)) return 1;
+        }
 
-        return fromDocument > 0 ? fromDocument : _extractionConfig?.NumberOfParts.FixedParts ?? 1;
+        return _extractionConfig?.NumberOfParts.FixedParts ?? 1;
+    }
+
+    /// <summary>
+    /// [AI Context] Whether refinement and PDF-repair output names keep the <c>-offset-</c> infix.
+    /// Multi-part runs and documents from legacy/merged inputs keep <c>-offset-</c>; single-pass runs
+    /// (<c>step1-&lt;name&gt;.tex</c> with no offset/merged/all suffixes or multi-part headers) omit it.
+    /// [Human] Entscheidet, ob Refinement-Dateien den Zusatz -offset- erhalten (entfällt bei 1-Teil-Läufen).
+    /// </summary>
+    public static bool UsesOffsetFileNaming(string inputFile, int partsCount) {
+        string stem = Path.GetFileNameWithoutExtension(inputFile);
+        if (OffsetOrMultiPartStemRegex().IsMatch(stem)) {
+            return true;
+        }
+        if (partsCount > 1) {
+            return true;
+        }
+        if (System.IO.File.Exists(inputFile)) {
+            string text = System.IO.File.ReadAllText(inputFile);
+            if (TexDocumentWriter.CountParts(text) > 1 || TexDocumentWriter.HasMultiPartOrMergeHeader(text)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"-(?:(?:part\d+-)?offset(?:-(?:merged|speech_refined|final|last_try\d+))?|all(?:-offset)?|merged)(?:-copy-?\d+)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex OffsetOrMultiPartStemRegex();
+
+    /// <summary>
+    /// [AI Context] Output filename for a refinement or repair step (<c>step3</c>, <c>step4</c>, <c>step5</c>).
+    /// [Human] Ausgabedateiname für Refinement- und Reparatur-Schritte (mit oder ohne -offset-).
+    /// </summary>
+    public static string StepOutputFileName(string stepPrefix, string baseName, string suffix, bool useOffsetNaming) =>
+        $"{stepPrefix}-{baseName}{(useOffsetNaming ? "-offset" : "")}-{suffix}.tex";
+
+    /// <summary>
+    /// [AI Context] Builds the opening prompt for Step 2 (Speech Refinement), distinguishing between a
+    /// merged multi-part document and a complete single-part document whose merge phase was skipped.
+    /// [Human] Erstellt den Eingangs-Prompt für Schritt 2 (Textkorrektur), angepasst für 1-Teil-Uploads.
+    /// </summary>
+    public static string BuildSpeechRefinementIntroPrompt(bool isSinglePart) {
+        string docDescription = isSinglePart
+            ? "complete single-part LaTeX document (.tex file) to process (this lecture consists of only one part, so no merge step was needed)"
+            : "current merged LaTeX document (.tex file) to process";
+        return $"Here is the {docDescription}. Please read and internalize the entire document structure, including all math containers, equations, and `speech` blocks. Please acknowledge that you have read it. I will provide the audio file and speech refinement instructions in the next round.";
     }
     /// <summary>
     /// [AI Context] Step 1: Merges overlapping LaTeX chunks. If an audio file is provided, its metadata is attached to align timestamps correctly.
@@ -334,7 +385,7 @@ public partial class LatexRefinementSession {
         return result;
     }
 
-    private async Task<string?> RefineAgainstSpeechAsync(string inputFile, string? audioFilePath, string baseName, string targetFolder) {
+    private async Task<string?> RefineAgainstSpeechAsync(string inputFile, string? audioFilePath, string baseName, string targetFolder, bool useOffsetNaming, bool isSinglePart) {
         bool audioAttached = _config.Step2SpeechRefinement.AttachAudio && audioFilePath != null && System.IO.File.Exists(audioFilePath);
         var audioParts = new List<Part>();
 
@@ -361,12 +412,12 @@ public partial class LatexRefinementSession {
 
         Ui.Info($"Lese Eingabedatei für Textkorrektur: {Path.GetFileName(inputFile)}", "Step 2");
         string content = TexDocumentWriter.StripHeadersForModel(await System.IO.File.ReadAllTextAsync(inputFile));
-        string outputFileName = $"step3-{baseName}-offset-speech_refined.tex";
+        string outputFileName = StepOutputFileName("step3", baseName, "speech_refined", useOffsetNaming);
         string? result;
 
         if (audioAttached && audioParts.Count > 0) {
             var round1Parts = new List<Part> {
-                new() { Text = "Here is the current merged LaTeX document (.tex file) to process. Please read and internalize the entire document structure, including all math containers, equations, and `speech` blocks. Please acknowledge that you have read it. I will provide the audio file and speech refinement instructions in the next round." },
+                new() { Text = BuildSpeechRefinementIntroPrompt(isSinglePart) },
                 new() { Text = $"<input_tex name=\"{Path.GetFileName(inputFile)}\">\n{content}\n</input_tex>" }
             };
 
@@ -400,7 +451,7 @@ public partial class LatexRefinementSession {
         return result;
     }
 
-    private async Task<string?> ApplyFinalPolishAsync(string inputFile, string baseName, string targetFolder, bool alreadyCompiles, string compilerFeedbackLog) {
+    private async Task<string?> ApplyFinalPolishAsync(string inputFile, string baseName, string targetFolder, bool alreadyCompiles, string compilerFeedbackLog, bool useOffsetNaming) {
         List<Part> parts = [new() { Text = "Perform the final refinement and formatting pass on this document according to the system instructions." }];
         if (alreadyCompiles) {
             parts.Add(new Part { Text = "<compiler_status>\nThe input LaTeX document ALREADY COMPILES successfully without any LaTeX errors! Please preserve its valid syntax and structure while performing any final textual/typographical refinements according to the system instructions.\n</compiler_status>" });
@@ -413,7 +464,7 @@ public partial class LatexRefinementSession {
         string content = TexDocumentWriter.StripHeadersForModel(await System.IO.File.ReadAllTextAsync(inputFile));
         parts.Add(new Part { Text = $"<input_tex>\n{content}\n</input_tex>" });
 
-        string outputFileName = $"step4-{baseName}-offset-final.tex";
+        string outputFileName = StepOutputFileName("step4", baseName, "final", useOffsetNaming);
         AttachmentUploader.HasJustUploaded = false;
         var result = await RunRefinementStepAsync(_config.Step3LastRefinement, TexDocumentWriter.FinalStep, "final", inputFile, parts, targetFolder, outputFileName, ContextCacheStateManager.StateFileLatexStep3);
 
@@ -638,12 +689,12 @@ public partial class LatexRefinementSession {
             }
         } while (stripped);
 
-        int partIdx = name.IndexOf("-part", StringComparison.OrdinalIgnoreCase);
-        if (partIdx >= 0) {
-            name = name[..partIdx];
-        }
+        name = TrailingPartSuffixRegex().Replace(name, "");
         return ExtractionHelpers.StripVideoExtensions(name);
     }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"-part\d+$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex TrailingPartSuffixRegex();
 
     // `speech` and `content` since the environment rename; the old names still count, for older output.
     [System.Text.RegularExpressions.GeneratedRegex(@"\\begin\{(?:speech|spoken-clean)\}")]

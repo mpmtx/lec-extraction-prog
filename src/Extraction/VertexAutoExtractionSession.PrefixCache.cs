@@ -71,7 +71,7 @@ public partial class VertexAutoExtractionSession {
         var sysParts = new List<Part>();
         if (!string.IsNullOrWhiteSpace(_systemInstructionText)) sysParts.Add(new() { Text = _systemInstructionText });
         if (_config.LoadHistoryIntoSystemInstruction && _historyParts.Count > 0) {
-            sysParts.AddRange(_historyParts.Where(p => p.FileData == null && p.InlineData == null && !string.IsNullOrEmpty(p.Text)));
+            sysParts.AddRange(SystemInstructionTextBuilder.PartitionForTextOnlySystemInstruction(_historyParts).TextOnlySystemParts);
         }
         if (sysParts.Count > 0) {
             requestConfig.SystemInstruction = new Content { Role = "system", Parts = sysParts };
@@ -120,7 +120,7 @@ public partial class VertexAutoExtractionSession {
                 int backoff = _config.CountTokensRetryBackoffSeconds > 0 ? _config.CountTokensRetryBackoffSeconds : 20;
                 var counted = await ApiRetryPolicy.ExecuteWithRetryAsync(
                     () => _client.Models.CountTokensAsync(_config.CurrentModel, warmupContents),
-                    maxRetries: 8,
+                    maxRetries: _config.MaxApiRetries > 0 ? _config.MaxApiRetries : ApiRetryPolicy.DefaultMaxRetries,
                     initialBackoff: backoff,
                     retryContext: "CountTokens Warmup",
                     highDemandDelay: _config.HighDemandDelaySeconds > 0 ? _config.HighDemandDelaySeconds : null);
@@ -152,6 +152,7 @@ public partial class VertexAutoExtractionSession {
                     await Task.CompletedTask;
                 },
                 cancellationToken: CancellationToken.None,
+                maxRetries: _config.MaxApiRetries > 0 ? _config.MaxApiRetries : ApiRetryPolicy.DefaultMaxRetries,
                 retryContext: "Cache-Warming Handshake",
                 highDemandDelay: _config.HighDemandDelaySeconds > 0 ? _config.HighDemandDelaySeconds : null
             );

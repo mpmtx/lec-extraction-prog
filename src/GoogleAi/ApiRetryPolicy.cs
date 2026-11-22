@@ -17,6 +17,14 @@ namespace LectureExtraction.GoogleAi;
 /// </summary>
 public static partial class ApiRetryPolicy {
     /// <summary>
+    /// [AI Context] Default maximum consecutive failed attempts (without any output chunk) before giving up.
+    /// Kept at 5 (lowered from 8 on 2026-11-16) so a sustained 503 high-demand spike does not burn
+    /// almost half of a free-tier profile's 20 daily requests in a single failed run.
+    /// [Human] Standard-Obergrenze für aufeinanderfolgende Fehlversuche ohne Fortschritt.
+    /// </summary>
+    public const int DefaultMaxRetries = 5;
+
+    /// <summary>
     /// [AI Context] Global default delay in seconds when the model returns a "high demand" error.
     /// Defaults to 180 seconds (3 minutes). Can be overridden globally or via the <c>highDemandDelay</c> parameter.
     /// [Human] Standard-Wartezeit in Sekunden bei hoher Modellauslastung ("high demand").
@@ -76,7 +84,7 @@ public static partial class ApiRetryPolicy {
         Func<IAsyncEnumerable<GenerateContentResponse>> streamFactory,
         Func<GenerateContentResponse, Task> onChunkReceived,
         CancellationToken cancellationToken,
-        int maxRetries = 8,
+        int maxRetries = DefaultMaxRetries,
         int initialBackoff = 130,
         string retryContext = "",
         Action? onRetry = null,
@@ -223,7 +231,7 @@ public static partial class ApiRetryPolicy {
     /// </summary>
     public static async Task<T?> ExecuteWithRetryAsync<T>(
         Func<Task<T>> apiCall,
-        int maxRetries = 8,
+        int maxRetries = DefaultMaxRetries,
         int initialBackoff = 45,
         string retryContext = "",
         int? highDemandDelay = null,

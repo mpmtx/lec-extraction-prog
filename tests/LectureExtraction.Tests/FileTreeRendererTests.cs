@@ -93,4 +93,14 @@ public class FileTreeRendererTests {
 
         Assert.Equal($"Root: {root}\n- ./a.md\n", list.Replace("\r\n", "\n"));
     }
+
+    [Fact]
+    public void GenerateMarkdownFileTree_CanOmitRootHeader() {
+        string root = Path.Combine(Path.GetTempPath(), "lec-test", "prompt");
+        string file = Path.Combine(root, "a.md");
+
+        string list = FileTreeRenderer.GenerateMarkdownFileTree([file], root, includeRoot: false);
+
+        Assert.Equal("- ./a.md\n", list.Replace("\r\n", "\n"));
+    }
 }

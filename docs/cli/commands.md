@@ -28,7 +28,7 @@ lecx run --folder "D:/lecture-videos/analysis2" --from 03-30-2026
 | `--force` | Ignore existing `.tex` parts and re-request every segment |
 | `--clean-tmp` | Delete the lecture's `tmp/` after a successful run |
 | `--out <dir>` | Target folder. Defaults to `<source>/extracted_output` |
-| `--parts <n\|auto>` · `--overlap <s>` · `--speed <x>` · `--preset <p>` | Segment geometry and FFmpeg preset. `auto` = one part per 22.5 min of video: a 45-min lecture gets 2, a 90-min double lecture 4 |
+| `--parts <n\|auto>` · `--overlap <s>` · `--speed <x>` · `--preset <p>` | Segment geometry and FFmpeg preset. `auto` = model-aware: older models (`2.5` / `3.x`) use 22.5 min/part (`45 min -> 2`, `90 min -> 4`); Hydrogen (`gemini-4-*`) uses 45 min/part (`45 min -> 1`, `90 +/- 10 min -> 2`) |
 | `--model <id>` · `--profile <n>` | Model and API-key profile for this run only |
 | `--fps <rate>` | How many frames per second Gemini samples from each uploaded part (`GoogleVideoFps`, AI Studio), e.g. `0.25`, `0.3333333`, `1`. Aliases `--google-video-fps`, `--video-fps`. `plan` reports it as `googleVideoFps` |
 | `--skip-token-counting` | Skip the pre-flight token count, which spends free-tier quota |
@@ -130,13 +130,13 @@ lecx refine run --tex out/step1-lecture.tex --step 1 --through-end
 Step 1 reads the part count from the document itself (its `% --- TEIL n` separators), so
 it is right for `--parts auto` and for a config changed since the extraction.
 
-The input of each step is the previous step's output:
+The input of each step is the previous step's output (single-part runs skip step 1 and omit `-all` / `-offset`):
 
-| Step | Reads | Writes |
+| Step | Multi-part (`>= 2` parts) | Single-pass (`1` part) |
 |---|---|---|
-| 1 | `step1-<name>-all-offset.tex` | `step2-<name>-offset-merged.tex` |
-| 2 | `step2-<name>-offset-merged.tex` | `step3-<name>-offset-speech_refined.tex` |
-| 3 | `step3-<name>-offset-speech_refined.tex` | `step4-<name>-offset-final.tex` |
+| 1 | `step1-<name>-all-offset.tex` → `step2-<name>-offset-merged.tex` | *skipped* (reads `step1-<name>.tex` directly) |
+| 2 | `step2-<name>-offset-merged.tex` → `step3-<name>-offset-speech_refined.tex` | `step1-<name>.tex` → `step3-<name>-speech_refined.tex` |
+| 3 | `step3-<name>-offset-speech_refined.tex` → `step4-<name>-offset-final.tex` | `step3-<name>-speech_refined.tex` → `step4-<name>-final.tex` |
 
 Exits `6` when a step failed — the log on stderr names which.
 

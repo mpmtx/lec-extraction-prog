@@ -30,23 +30,8 @@ namespace LectureExtraction.Extraction;
 public partial class AutoExtractionSession {
 
     private async Task<SegmentUpload> UploadSegmentAndBuildPromptAsync(string partFile, int partNumber, int totalParts, string originalFileName, double fullOriginalVideoDuration) {
-        var dateInfo = VideoDateParser.Parse(originalFileName);
-        string dateContext = dateInfo.GetFormattedContext();
         double partDurationSeconds = await FfmpegToolkit.GetVideoDurationAsync(partFile);
-        string durationString = ExtractionHelpers.FormatDurationForPrompt(partDurationSeconds);
-        string fullDurationString = ExtractionHelpers.FormatDurationForPrompt(fullOriginalVideoDuration);
-
-        string dateMetadata = LectureMetadataText(dateInfo, dateContext, partNumber);
-        string singlePartCheckpointNote = totalParts == 1
-            ? " Since this is a complete single-part video (Part 1 of 1), do NOT emit a trailing `\\begin{aiNote}[Final Video Cut-off \\& Board State Checkpoint]` at the end of the document."
-            : "";
-
-        string prompt =
-            $"<parameter name=\"lecture_metadata\">{dateMetadata}</parameter>\n" +
-            $"<parameter name=\"source_video\">You must transcribe the video attachment named `{Path.GetFileName(partFile)}` verbatim according to the system instructions. Ensure you transcribe every single spoken word up to the very last second of the video, even if it cuts off mid-sentence.</parameter>\n" +
-            $"<parameter name=\"segment_info\">You are currently transcribing Part {partNumber} of {totalParts} from this lecture. This specific video segment is exactly {durationString} long; that is the value for `% End of the video`. For context only, the whole lecture, of which this segment is one part, runs {fullDurationString}; never use that number for a timestamp.{singlePartCheckpointNote}</parameter>\n" +
-            $"<parameter name=\"duration_and_timestamps\">Do NOT calculate any time offset for the 'speech' environment. Start at 00:00:00 and ensure the final timestamp in your very last 'speech' block perfectly matches the segment length ({durationString}).</parameter>\n" +
-            "</context_and_parameters>";
+        string prompt = Stage1SegmentPrompt.BuildParameters(partFile, partNumber, totalParts, originalFileName, partDurationSeconds, fullOriginalVideoDuration);
 
         var (uploadSuccess, attachmentParts) = await _attachmentHandler.UploadFilesAsync([partFile]);
         if (!uploadSuccess || attachmentParts.Count == 0) return new SegmentUpload(false, null, []);
@@ -56,45 +41,33 @@ public partial class AutoExtractionSession {
 
     /// <summary>
     /// [AI Context] The lecture_metadata parameter: date, weekday and week from the video's file name.
-    /// When the name states no weekday, the model is told so - derived from the date when there is
-    /// one, otherwise explicitly unknown - instead of reading "day of the week (Unknown)" with no
-    /// reason given and filling in a guess. A name that states its weekday gets the old text unchanged.
-    /// [Human] Datums-Angaben für den Prompt; sagt Gemini, wenn der Wochentag nicht im Dateinamen steht.
+    /// Delegates to <see cref="Stage1SegmentPrompt.LectureMetadataText"/> so AI Studio and Vertex share
+    /// one implementation.
+    /// [Human] Datums-Angaben für den Prompt; kennzeichnet einteilige Vorlesungen ausdrücklich.
     /// </summary>
-    public static string LectureMetadataText(VideoDateParser.VideoDateInfo dateInfo, string dateContext, int partNumber) {
-        string? weekday = dateInfo.WeekdayEnglish ?? dateInfo.Weekday;
-        string weekdayNote = "";
-        if (weekday == null) {
-            if (dateInfo.Date != DateTime.MinValue) {
-                weekday = dateInfo.Date.DayOfWeek.ToString();
-                weekdayNote = $" The file name does not state the day of the week; {weekday} is derived from the date.";
-            }
-            else {
-                weekday = "Unknown";
-                weekdayNote = " The file name states neither the day of the week nor a date to derive it from, so the day of the week is unknown. Do not guess it: where the system instructions ask for it, say that it is unknown.";
-            }
-        }
-
-        string weekInfo = dateInfo.WeekInfo ?? "N/A";
-        return partNumber == 1
-            ? $"The lecture being transcribed is from {dateContext}. Please note that the exact date, day of the week ({weekday}), and week number ({weekInfo}) are important metadata since this is part 1 of the lecture.{weekdayNote}"
-            : $"The lecture took place on {dateContext} (Day of the week: {weekday}).{weekdayNote}";
-    }
+    public static string LectureMetadataText(VideoDateParser.VideoDateInfo dateInfo, string dateContext, int partNumber, int totalParts = 0) =>
+        Stage1SegmentPrompt.LectureMetadataText(dateInfo, dateContext, partNumber, totalParts);
 
     /// <param name="partOutputPath">The part's .tex path; its thoughts file goes beside it. Without it no
     /// thoughts file is written, whatever ThoughtSummaries says.</param>
-    public async Task<SegmentTranscript> TranscribeSegmentToLatexAsync(string partFile, int partNumber, string originalFileName, string? parsedPrompt, List<Part> attachmentParts, List<string> previousTexFiles, string? partOutputPath = null) {
+    public Task<SegmentTranscript> TranscribeSegmentToLatexAsync(string partFile, int partNumber, string originalFileName, string? parsedPrompt, List<Part> attachmentParts, List<string> previousTexFiles, string? partOutputPath = null) =>
+        TranscribeSegmentToLatexAsync(partFile, partNumber, originalFileName, parsedPrompt, attachmentParts, previousTexFiles, partOutputPath, totalParts: 0);
+
+    public async Task<SegmentTranscript> TranscribeSegmentToLatexAsync(string partFile, int partNumber, string originalFileName, string? parsedPrompt, List<Part> attachmentParts, List<string> previousTexFiles, string? partOutputPath, int totalParts) {
         var (requestConfig, history) = await BuildGenerationRequestAsync(partNumber, parsedPrompt, attachmentParts, previousTexFiles);
 
         int? promptTokens = await LogTokenCountsAsync(requestConfig, attachmentParts, history, previousTexFiles, partNumber);
 
-        string logContext = $"[Part {partNumber}] {Path.GetFileName(originalFileName)}\n[Angehängtes Video]: {Path.GetFileName(partFile)}";
+        string partTag = totalParts == 1 ? "[Single Part]" : $"[Part {partNumber}]";
+        string logContext = $"{partTag} {Path.GetFileName(originalFileName)}\n[Angehängtes Video]: {Path.GetFileName(partFile)}";
         if (previousTexFiles.Count > 0) {
             logContext += $"\n[Kontext-Dateien]: {string.Join(", ", previousTexFiles.Select(Path.GetFileName))}";
         }
         logContext += $"\n\n[Prompt]:\n{parsedPrompt ?? ""}";
 
-        var thoughts = new ThoughtLog(_config.ThoughtSummaries, $"extract-part{partNumber}", $"{TexDocumentWriter.TranscriptionStep}, part {partNumber}",
+        string thoughtStageKey = totalParts == 1 ? "extract" : $"extract-part{partNumber}";
+        string thoughtStageLabel = totalParts == 1 ? TexDocumentWriter.SinglePartTranscriptionStep : $"{TexDocumentWriter.TranscriptionStep}, part {partNumber}";
+        var thoughts = new ThoughtLog(_config.ThoughtSummaries, thoughtStageKey, thoughtStageLabel,
             _config.CurrentModel, partOutputPath, _sessionLogger.ChatLogFilePath);
         return await StreamAndCollectAsync(requestConfig, history, partNumber, originalFileName, partFile, logContext, thoughts, promptTokens);
     }
@@ -258,7 +231,7 @@ public partial class AutoExtractionSession {
             // so all calls here are wrapped with retry to avoid exhausting the token budget mid-count.
             var videoCount = await ApiRetryPolicy.ExecuteWithRetryAsync(
                 () => _client.Models.CountTokensAsync(_config.CurrentModel, videoContents),
-                maxRetries: 8, initialBackoff: 20, retryContext: $"CountTokens Part {partNumber} (video)");
+                maxRetries: ApiRetryPolicy.DefaultMaxRetries, initialBackoff: 20, retryContext: $"CountTokens Part {partNumber} (video)");
             int vidToks = videoCount?.TotalTokens ?? 0;
 
             var allContentsForCount = new List<Content>();
@@ -267,7 +240,7 @@ public partial class AutoExtractionSession {
 
             var totalCount = await ApiRetryPolicy.ExecuteWithRetryAsync(
                 () => _client.Models.CountTokensAsync(_config.CurrentModel, allContentsForCount),
-                maxRetries: 8, initialBackoff: 20, retryContext: $"CountTokens Part {partNumber} (total)");
+                maxRetries: ApiRetryPolicy.DefaultMaxRetries, initialBackoff: 20, retryContext: $"CountTokens Part {partNumber} (total)");
             int promptToks = totalCount?.TotalTokens ?? 0;
             Ui.Info($"[Part {partNumber} Prompt] Total Prompt-Tokens (ganzer Prompt): {promptToks:N0} (Video: {vidToks:N0} Tokens)", "Tokens");
             countedPromptTokens = promptToks > 0 ? promptToks : null;
@@ -280,7 +253,7 @@ public partial class AutoExtractionSession {
                     var texContents = new List<Content> { new() { Role = "user", Parts = [userPromptParts[0]] } };
                     var texCount = await ApiRetryPolicy.ExecuteWithRetryAsync(
                         () => _client.Models.CountTokensAsync(_config.CurrentModel, texContents),
-                        maxRetries: 8, initialBackoff: 20, retryContext: $"CountTokens Part {partNumber} (tex)");
+                        maxRetries: ApiRetryPolicy.DefaultMaxRetries, initialBackoff: 20, retryContext: $"CountTokens Part {partNumber} (tex)");
                     int texToks = texCount?.TotalTokens ?? 0;
                     string fileInfo;
                     if (hasDummy && hasPreviousParts && _config.InlinePrecedingLecTexParts) {
@@ -324,6 +297,7 @@ public partial class AutoExtractionSession {
                     Ui.Step($"Sende Anfrage für Part {partNumber} an {_backend.ProviderName} ({_config.CurrentModel}) (Request {request}/{max})..."),
                 RetryContext = $"Teil {partNumber} von {Path.GetFileName(originalFileName)}",
                 HighDemandDelay = _config.HighDemandDelaySeconds > 0 ? _config.HighDemandDelaySeconds : null,
+                MaxRetries = _config.MaxApiRetries > 0 ? _config.MaxApiRetries : null,
                 UnrecoverableErrorPrefix = "Der Fehler konnte nicht durch einen automatischen Retry behoben werden. Fahre mit nächstem Teil fort. Finaler Fehler: ",
                 ShowGroundingSources = true,
                 ReportRequest = request => ReportPartRequest(request, partNumber),

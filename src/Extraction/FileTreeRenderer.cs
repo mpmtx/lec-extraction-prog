@@ -50,7 +50,7 @@ public static partial class FileTreeRenderer {
         }
     }
 
-    public static string GenerateMarkdownFileTree(List<string> filePaths, string? baseDir) {
+    public static string GenerateMarkdownFileTree(List<string> filePaths, string? baseDir, bool includeRoot = true) {
         if (filePaths == null || filePaths.Count == 0) return "";
 
         if (string.IsNullOrEmpty(baseDir)) {
@@ -64,7 +64,7 @@ public static partial class FileTreeRenderer {
         // (Stage1PromptFiles), so the list doubles as a table of contents. Until 2026-11-09 it was
         // sorted (files before folders, by name) and matched neither that order nor the hubs' indexes.
         var sb = new System.Text.StringBuilder();
-        if (!string.IsNullOrEmpty(baseDir)) {
+        if (includeRoot && !string.IsNullOrEmpty(baseDir)) {
             sb.AppendLine($"Root: {baseDir}");
         }
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

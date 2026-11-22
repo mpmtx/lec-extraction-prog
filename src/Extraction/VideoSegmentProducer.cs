@@ -68,11 +68,18 @@ public static partial class VideoSegmentProducer {
 
             // Audio extraction was moved to the Consumer loop to run in parallel with API calls
 
-            // Removed dateStr from filename pattern for caching to work across days for 2-hour window
-            var cachedParts = Directory.GetFiles(tmpFolderForFile, $"{baseName}-part*.mp4").ToList();
-
             double fullOriginalVideoDuration = await FfmpegToolkit.GetVideoDurationAsync(file); // Get original video duration
-            int expectedParts = config.NumberOfParts.Resolve(fullOriginalVideoDuration);
+            int expectedParts = config.NumberOfParts.Resolve(fullOriginalVideoDuration, config.CurrentModel);
+            string singlePartPath = SegmentFilePath(tmpFolderForFile, baseName, 1, 1);
+            List<string> multiPartFiles = [.. Directory.GetFiles(tmpFolderForFile, $"{baseName}-part*.mp4")];
+            List<string> cachedParts = expectedParts <= 1
+                ? (System.IO.File.Exists(singlePartPath) ? [singlePartPath] : [])
+                : multiPartFiles;
+            List<string> oppositeModeFiles = expectedParts <= 1
+                ? multiPartFiles
+                : (System.IO.File.Exists(singlePartPath) ? [singlePartPath] : []);
+            DeleteStaleCacheFiles(oppositeModeFiles);
+
             TimeSpan cacheDuration = TimeSpan.FromHours(48); // Set cache duration to 48 hours (2 days)
             bool useCache = false;
 
@@ -97,14 +104,7 @@ public static partial class VideoSegmentProducer {
                     }
                     else {
                         Ui.Warn($"Ignoriere unvollständigen oder defekten Cache für '{Path.GetFileName(file)}' ({cachedParts.Count} Teil(e), valid: {allFilesValid}). FFmpeg wird neu gestartet...", "Cache");
-                        foreach (var stalePartFile in cachedParts) {
-                            try {
-                                System.IO.File.Delete(stalePartFile);
-                            }
-                            catch (Exception ex) {
-                                Ui.Detail($"[Cache Bereinigung] Veraltete Datei '{Path.GetFileName(stalePartFile)}' konnte nicht gelöscht werden: {ex.Describe()}");
-                            }
-                        }
+                        DeleteStaleCacheFiles(cachedParts);
                     }
                 }
             }
@@ -170,7 +170,7 @@ public static partial class VideoSegmentProducer {
             if (rawPartsWithTimes.Count > 0) {
                 List<VideoSegment> safePartsWithTimes = [];
                 for (int i = 0; i < rawPartsWithTimes.Count; i++) {
-                    string safePartPath = Path.Combine(tmpFolderForFile, $"{baseName}-part{i + 1}.mp4");
+                    string safePartPath = SegmentFilePath(tmpFolderForFile, baseName, i + 1, rawPartsWithTimes.Count);
 
                     if (!string.Equals(rawPartsWithTimes[i].FilePath, safePartPath, StringComparison.OrdinalIgnoreCase)) {
                         if (System.IO.File.Exists(safePartPath)) System.IO.File.Delete(safePartPath);
@@ -180,6 +180,27 @@ public static partial class VideoSegmentProducer {
                     safePartsWithTimes.Add(new VideoSegment(safePartPath, rawPartsWithTimes[i].StartTimeSeconds));
                 }
                 await writer.WriteAsync(new PreparedVideo(file, fileSpecificOutputFolder, tmpFolderForFile, safePartsWithTimes, false, fullOriginalVideoDuration), cancellationToken);
+            }
+        }
+    }
+
+    /// <summary>
+    /// [AI Context] Canonical path of a prepared segment in <paramref name="tmpFolder"/>: single-pass
+    /// uploads keep the bare <c>{baseName}.mp4</c> name instead of <c>-part1</c>.
+    /// [Human] Dateipfad eines vorbereiteten Videosegments im tmp-Ordner.
+    /// </summary>
+    public static string SegmentFilePath(string tmpFolder, string baseName, int partNumber, int totalParts) =>
+        totalParts <= 1
+            ? Path.Combine(tmpFolder, $"{baseName}.mp4")
+            : Path.Combine(tmpFolder, $"{baseName}-part{partNumber}.mp4");
+
+    private static void DeleteStaleCacheFiles(IEnumerable<string> staleFiles) {
+        foreach (string stalePartFile in staleFiles) {
+            try {
+                System.IO.File.Delete(stalePartFile);
+            }
+            catch (Exception ex) {
+                Ui.Detail($"[Cache Bereinigung] Veraltete Datei '{Path.GetFileName(stalePartFile)}' konnte nicht gelöscht werden: {ex.Describe()}");
             }
         }
     }

@@ -110,7 +110,8 @@ public static class ExtractionPlanner {
     public const double DefaultResumeWindowHours = 2;
 
     /// <param name="durations">Each video's length in seconds, from <see cref="ProbeDurationsIfAutoAsync"/>.
-    /// Only consulted when NumberOfParts is "auto"; without it an auto plan assumes 3 parts.</param>
+    /// Only consulted when NumberOfParts is "auto"; without it an auto plan assumes the model's
+    /// default fallback (3 parts for older models, 2 for Hydrogen).</param>
     public static ExtractionPlan Build(
         AiStudioAutoExtractionConfig config,
         IReadOnlyList<string> videos,
@@ -176,7 +177,7 @@ public static class ExtractionPlanner {
 
         // The same resolution VideoSegmentProducer applies when it cuts, so an "auto" plan predicts
         // the segment count the run will actually produce.
-        int segmentCount = config.NumberOfParts.Resolve(durations?.GetValueOrDefault(video) ?? 0);
+        int segmentCount = config.NumberOfParts.Resolve(durations?.GetValueOrDefault(video) ?? 0, config.CurrentModel);
         return new PlannedVideo(
             FileName: Path.GetFileName(video),
             Path: Path.GetFullPath(video),
@@ -218,7 +219,7 @@ public static class ExtractionPlanner {
         int resumable = 0;
 
         for (int part = 1; part <= segmentCount; part++) {
-            if (PartReuse.FindReusablePart(outputFolder, baseName, part, window) != null) {
+            if (PartReuse.FindReusablePart(outputFolder, baseName, part, window, segmentCount) != null) {
                 resumable++;
             }
         }

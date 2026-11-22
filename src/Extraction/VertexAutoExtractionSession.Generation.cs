@@ -28,24 +28,8 @@ namespace LectureExtraction.Extraction;
 /// </summary>
 public partial class VertexAutoExtractionSession {
     private async Task<SegmentUpload> UploadSegmentAndBuildPromptAsync(string partFile, int partNumber, int totalParts, string originalFileName, double fullOriginalVideoDuration) {
-        var dateInfo = VideoDateParser.Parse(originalFileName);
-        string dateContext = dateInfo.GetFormattedContext();
-        string weekday = dateInfo.WeekdayEnglish ?? dateInfo.Weekday ?? "Unknown";
-
         double partDurationSeconds = await FfmpegToolkit.GetVideoDurationAsync(partFile);
-        string durationString = ExtractionHelpers.FormatDurationForPrompt(partDurationSeconds);
-        string fullDurationString = ExtractionHelpers.FormatDurationForPrompt(fullOriginalVideoDuration);
-
-        string dateMetadata = partNumber == 1
-            ? $"The lecture being transcribed is from {dateContext}. Please note that the exact date, day of the week ({weekday}), and week number ({dateInfo.WeekInfo ?? "N/A"}) are important metadata since this is part 1 of the lecture."
-            : $"The lecture took place on {dateContext} (Day of the week: {weekday}). This is not so important since this is part {partNumber} of the lecture.";
-
-        string prompt =
-            $"<parameter name=\"lecture_metadata\">{dateMetadata}</parameter>\n" +
-            $"<parameter name=\"source_video\">You must transcribe the video attachment named `{Path.GetFileName(partFile)}` verbatim according to the system instructions. Ensure you transcribe every single spoken word up to the very last second of the video, even if it cuts off mid-sentence.</parameter>\n" +
-            $"<parameter name=\"segment_info\">You are currently transcribing Part {partNumber} of {totalParts} from this lecture. This specific video segment is exactly {durationString} long; that is the value for `% End of the video`. For context only, the whole lecture, of which this segment is one part, runs {fullDurationString}; never use that number for a timestamp.</parameter>\n" +
-            $"<parameter name=\"duration_and_timestamps\">Do NOT calculate any time offset for the 'speech' environment. Start at 00:00:00 and ensure the final timestamp in your very last 'speech' block perfectly matches the segment length ({durationString}).</parameter>\n" +
-            "</context_and_parameters>";
+        string prompt = Stage1SegmentPrompt.BuildParameters(partFile, partNumber, totalParts, originalFileName, partDurationSeconds, fullOriginalVideoDuration);
 
         var (uploadSuccess, parsedPrompt, attachmentParts) = await _attachmentHandler.ProcessAttachmentsAsync($"attach \"{partFile}\" | {prompt}");
         if (!uploadSuccess || attachmentParts.Count == 0) return new SegmentUpload(false, null, []);
@@ -55,18 +39,21 @@ public partial class VertexAutoExtractionSession {
 
     /// <param name="partOutputPath">The part's .tex path; its thoughts file goes beside it. Without it no
     /// thoughts file is written, whatever ThoughtSummaries says.</param>
-    private async Task<SegmentTranscript> TranscribeSegmentToLatexAsync(string partFile, int partNumber, string originalFileName, string? parsedPrompt, List<Part> attachmentParts, List<string> previousTexFiles, string? partOutputPath = null) {
+    private async Task<SegmentTranscript> TranscribeSegmentToLatexAsync(string partFile, int partNumber, string originalFileName, string? parsedPrompt, List<Part> attachmentParts, List<string> previousTexFiles, string? partOutputPath = null, int totalParts = 0) {
         var (requestConfig, history) = await BuildGenerationRequestAsync(partFile, partNumber, parsedPrompt, attachmentParts, previousTexFiles);
 
         await LogTokenCountsAsync(requestConfig, attachmentParts, history, previousTexFiles, partNumber);
 
-        string logContext = $"[Part {partNumber}] {Path.GetFileName(originalFileName)}\n[Angehängtes Video]: {Path.GetFileName(partFile)}";
+        string partTag = totalParts == 1 ? "[Single Part]" : $"[Part {partNumber}]";
+        string logContext = $"{partTag} {Path.GetFileName(originalFileName)}\n[Angehängtes Video]: {Path.GetFileName(partFile)}";
         if (previousTexFiles.Count > 0) {
             logContext += $"\n[Kontext-Dateien]: {string.Join(", ", previousTexFiles.Select(Path.GetFileName))}";
         }
         logContext += $"\n\n[Prompt]:\n{parsedPrompt ?? ""}";
 
-        var thoughts = new ThoughtLog(_config.ThoughtSummaries, $"extract-part{partNumber}", $"{TexDocumentWriter.TranscriptionStep}, part {partNumber}",
+        string thoughtStageKey = totalParts == 1 ? "extract" : $"extract-part{partNumber}";
+        string thoughtStageLabel = totalParts == 1 ? TexDocumentWriter.SinglePartTranscriptionStep : $"{TexDocumentWriter.TranscriptionStep}, part {partNumber}";
+        var thoughts = new ThoughtLog(_config.ThoughtSummaries, thoughtStageKey, thoughtStageLabel,
             _config.CurrentModel, partOutputPath, _sessionLogger.ChatLogFilePath);
         return await StreamAndCollectAsync(requestConfig, history, partNumber, originalFileName, partFile, logContext, thoughts);
     }
@@ -114,7 +101,7 @@ public partial class VertexAutoExtractionSession {
             Temperature = _config.Temperature,
             TopP = _config.TopP,
             TopK = _config.TopK,
-            MaxOutputTokens = _config.MaxOutputTokens,
+            MaxOutputTokens = ModelCapabilities.ResolveMaxOutputTokens(_config.CurrentModel, _config.MaxOutputTokens),
             AutomaticContinuation = false
         };
 
@@ -129,11 +116,10 @@ public partial class VertexAutoExtractionSession {
             var sysParts = new List<Part>();
             if (!string.IsNullOrWhiteSpace(_systemInstructionText)) sysParts.Add(new() { Text = _systemInstructionText });
             if (_config.LoadHistoryIntoSystemInstruction && _historyParts.Count > 0) {
-                var textOnly = _historyParts.Where(p => p.FileData == null && p.InlineData == null && !string.IsNullOrEmpty(p.Text)).ToList();
-                var nonText = _historyParts.Where(p => p.FileData != null || p.InlineData != null).ToList();
+                var (textOnly, nonSystem) = SystemInstructionTextBuilder.PartitionForTextOnlySystemInstruction(_historyParts);
                 sysParts.AddRange(textOnly);
-                if (nonText.Count > 0 && history.Count == 0) {
-                    history.Add(new Content { Role = "user", Parts = nonText });
+                if (nonSystem.Count > 0 && history.Count == 0) {
+                    history.Add(new Content { Role = "user", Parts = nonSystem });
                 }
             }
             if (sysParts.Count > 0) {
@@ -188,7 +174,7 @@ public partial class VertexAutoExtractionSession {
             // so all calls here are wrapped with retry to avoid exhausting the token budget mid-count.
             var videoCount = await ApiRetryPolicy.ExecuteWithRetryAsync(
                 () => _client.Models.CountTokensAsync(_config.CurrentModel, videoContents),
-                maxRetries: 8, initialBackoff: 20, retryContext: $"CountTokens Part {partNumber} (video)");
+                maxRetries: ApiRetryPolicy.DefaultMaxRetries, initialBackoff: 20, retryContext: $"CountTokens Part {partNumber} (video)");
             int vidToks = videoCount?.TotalTokens ?? 0;
 
             var allContentsForCount = new List<Content>();
@@ -197,7 +183,7 @@ public partial class VertexAutoExtractionSession {
 
             var totalCount = await ApiRetryPolicy.ExecuteWithRetryAsync(
                 () => _client.Models.CountTokensAsync(_config.CurrentModel, allContentsForCount),
-                maxRetries: 8, initialBackoff: 20, retryContext: $"CountTokens Part {partNumber} (total)");
+                maxRetries: ApiRetryPolicy.DefaultMaxRetries, initialBackoff: 20, retryContext: $"CountTokens Part {partNumber} (total)");
             int promptToks = totalCount?.TotalTokens ?? 0;
             Ui.Info($"[Part {partNumber} Prompt] Total Prompt-Tokens (ganzer Prompt): {promptToks:N0} (Video: {vidToks:N0} Tokens)", "Tokens");
 
@@ -209,7 +195,7 @@ public partial class VertexAutoExtractionSession {
                     var texContents = new List<Content> { new() { Role = "user", Parts = [userPromptParts[0]] } };
                     var texCount = await ApiRetryPolicy.ExecuteWithRetryAsync(
                         () => _client.Models.CountTokensAsync(_config.CurrentModel, texContents),
-                        maxRetries: 8, initialBackoff: 20, retryContext: $"CountTokens Part {partNumber} (tex)");
+                        maxRetries: ApiRetryPolicy.DefaultMaxRetries, initialBackoff: 20, retryContext: $"CountTokens Part {partNumber} (tex)");
                     int texToks = texCount?.TotalTokens ?? 0;
                     string fileInfo;
                     if (hasDummy && hasPreviousParts && _config.InlinePrecedingLecTexParts) {
@@ -238,6 +224,7 @@ public partial class VertexAutoExtractionSession {
                     Ui.Step($"Sende Anfrage für Part {partNumber} an Vertex AI ({_config.CurrentModel}) (Request {request}/{max})..."),
                 RetryContext = $"Teil {partNumber} von {Path.GetFileName(originalFileName)}",
                 HighDemandDelay = _config.HighDemandDelaySeconds > 0 ? _config.HighDemandDelaySeconds : null,
+                MaxRetries = _config.MaxApiRetries > 0 ? _config.MaxApiRetries : null,
                 UnrecoverableErrorPrefix = "Der Fehler konnte nicht durch einen automatischen Retry behoben werden. Fahre mit nächstem Teil fort. Finaler Fehler: ",
                 ShowGroundingSources = true,
                 ReportRequest = request => ReportPartRequest(request, partNumber),

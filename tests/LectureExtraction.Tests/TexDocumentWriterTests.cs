@@ -221,4 +221,24 @@ public class TexDocumentWriterTests {
 
         Assert.Equal(combined, TexDocumentWriter.RestorePartHeaders(bare, TexDocumentWriter.ExtractPartHeaders(combined)));
     }
+
+    [Fact]
+    public void SinglePartHeader_MarksSinglePassAndPreservesThoughtsLinkAcrossLayers() {
+        string single = TexDocumentWriter.BuildSinglePartHeader(
+            "step1-lec.tex", "lec.mp4", "lec-speed-1-compressed.mp4",
+            new TokenUsage(100_000, 0, 100_000, 20_000, 1), "gemini-4-hydrogen", Generation, "step1-lec-thoughts.md");
+
+        Assert.Equal($"% {TexDocumentWriter.SinglePartTranscriptionStep}", single.Split('\n')[1]);
+        Assert.Equal("step1-lec-thoughts.md", TexDocumentWriter.ThoughtsFileNameOf(single));
+        Assert.True(TexDocumentWriter.HasSinglePartHeader(single));
+        Assert.False(TexDocumentWriter.HasMultiPartOrMergeHeader(single));
+
+        string afterSpeech = TexDocumentWriter.StackLayers(
+            TexDocumentWriter.BuildRefinementHeader(TexDocumentWriter.SpeechStep, "step3-lec-speech_refined.tex", "step1-lec.tex", default, "gemini-4-hydrogen", Generation),
+            TexDocumentWriter.SplitHeaderLayers(single).Layers,
+            "\\section{Body}");
+
+        Assert.True(TexDocumentWriter.HasSinglePartHeader(afterSpeech));
+        Assert.False(TexDocumentWriter.HasMultiPartOrMergeHeader(afterSpeech));
+    }
 }

@@ -45,10 +45,12 @@ public class HydrogenModelSupportTests {
     }
 
     [Theory]
+    [InlineData("gemini-4-hydrogen", 300000, 300000)]
     [InlineData("gemini-4-hydrogen", 100000, 100000)]
     [InlineData("gemini-4-hydrogen", 131072, 131072)]
     [InlineData("gemini-4-hydrogen", 65536, 65536)]
     [InlineData("gemini-4-hydrogen", 65535, 65535)]
+    [InlineData("gemini-3.8-flash", 300000, 65536)]
     [InlineData("gemini-3.8-flash", 100000, 65536)]
     [InlineData("gemini-3.8-flash", 65537, 65536)]
     [InlineData("gemini-3.8-flash", 65536, 65536)]
@@ -59,6 +61,17 @@ public class HydrogenModelSupportTests {
     public void ResolveMaxOutputTokens_KeepsConfiguredValueForHydrogenAndCapsOlderModelsAt65536(
         string modelName, int configuredTokens, int expectedTokens) {
         Assert.Equal(expectedTokens, ModelCapabilities.ResolveMaxOutputTokens(modelName, configuredTokens));
+    }
+
+    [Fact]
+    public void ConfigurationDefaults_Use300000MaxOutputTokens() {
+        Assert.Equal(300000, new GenerationParameters().MaxOutputTokens);
+        Assert.Equal(300000, new AiStudioAutoExtractionConfig().MaxOutputTokens);
+        Assert.Equal(300000, new VertexAutoExtractionConfig().MaxOutputTokens);
+        Assert.Equal(300000, new RefinementStepConfig().AiStudio.MaxOutputTokens);
+        Assert.Equal(300000, new RefinementStepConfig().Vertex.MaxOutputTokens);
+        Assert.Equal(300000, new DirectAiChatSessionAiStudioConfig().MaxOutputTokens);
+        Assert.Equal(300000, new DirectAiChatSessionVertexConfig().MaxOutputTokens);
     }
 
     [Theory]

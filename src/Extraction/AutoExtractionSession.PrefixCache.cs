@@ -250,7 +250,7 @@ public partial class AutoExtractionSession {
                 int backoff = _config.CountTokensRetryBackoffSeconds > 0 ? _config.CountTokensRetryBackoffSeconds : 20;
                 var counted = await ApiRetryPolicy.ExecuteWithRetryAsync(
                     () => _client.Models.CountTokensAsync(_config.CurrentModel, warmupContents),
-                    maxRetries: 8,
+                    maxRetries: _config.MaxApiRetries > 0 ? _config.MaxApiRetries : ApiRetryPolicy.DefaultMaxRetries,
                     initialBackoff: backoff,
                     retryContext: $"CountTokens {stepLabel}",
                     highDemandDelay: _config.HighDemandDelaySeconds > 0 ? _config.HighDemandDelaySeconds : null);
@@ -287,6 +287,7 @@ public partial class AutoExtractionSession {
                     await Task.CompletedTask;
                 },
                 cancellationToken: CancellationToken.None,
+                maxRetries: _config.MaxApiRetries > 0 ? _config.MaxApiRetries : ApiRetryPolicy.DefaultMaxRetries,
                 retryContext: "Cache-Warming Handshake",
                 highDemandDelay: _config.HighDemandDelaySeconds > 0 ? _config.HighDemandDelaySeconds : null,
                 // The counted size lets the retry policy stop when a per-minute token limit is smaller than the handshake.

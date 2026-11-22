@@ -366,7 +366,9 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
         string? commonBase = FileTreeRenderer.FindCommonBaseDirectory(allPathsForBaseResolution);
 
         // Build the system instruction text from the instruction files
-        string instructionText = await SystemInstructionTextBuilder.BuildAsync(resolvedInstructionFiles, historyFilesForSystemInstruction, commonBase, _config.VerboseConsoleOutput);
+        bool historyInUserTurn = !_config.LoadHistoryIntoSystemInstruction || !_config.InlineHistory;
+        string instructionText = await SystemInstructionTextBuilder.BuildAsync(
+            resolvedInstructionFiles, historyFilesForSystemInstruction, commonBase, _config.VerboseConsoleOutput, historyInUserTurn);
         _systemInstructionText = instructionText;
 
         // If there is history to load, process it via WarmUpWithBatchedHistoryAsync
@@ -394,39 +396,40 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
 
 
     /// <summary>
-    /// [AI Context] Puts one loaded history batch where LoadHistoryIntoSystemInstruction says: its inlined
-    /// text and media into the system instruction or the user turn's history parts. Uploaded text files
-    /// (InlineHistory=false) always go to the user turn, because the system instruction rejects file links
-    /// (gemini-cache-probe e13). A batch whose text files were all uploaded leaves no empty text Part behind.
-    /// [Human] Legt einen geladenen History-Batch in System Instruction oder User-Turn ab.
+    /// [AI Context] Puts one loaded history batch where LoadHistoryIntoSystemInstruction says, keeping each
+    /// example's <c>.md</c> and its images interleaved in <see cref="SystemInstructionTextBuilder.LoadedHistory.OrderedParts"/>.
+    /// Uploaded text files (InlineHistory=false) always go to the user turn, because the system instruction
+    /// rejects file links (gemini-cache-probe e13); their paired images travel right beside them there so
+    /// images and explanations stay together in the same turn.
+    /// [Human] Legt einen geladenen History-Batch in System Instruction oder User-Turn ab, mit Text und Bildern zusammen.
     /// </summary>
     private void AddLoadedHistory(string batchText, SystemInstructionTextBuilder.LoadedHistory loaded) {
-        if (_config.LoadHistoryIntoSystemInstruction) {
-            _systemInstructionText += batchText;
-            _historyParts.AddRange(loaded.MediaParts);
+        IReadOnlyList<Part> ordered = loaded.OrderedParts is { Count: > 0 }
+            ? loaded.OrderedParts
+            : [..(batchText.Length > 0 ? new[] { new Part { Text = batchText } } : Array.Empty<Part>()), ..loaded.MediaParts, ..loaded.UploadedTextParts];
+
+        if (loaded.UploadedTextParts.Count > 0) {
+            _uploadedHistoryParts.AddRange(ordered);
         } else {
-            if (_config.InlineHistory || batchText.Length > 0) {
-                _historyParts.Add(new Part { Text = batchText });
-            }
-            _historyParts.AddRange(loaded.MediaParts);
+            _historyParts.AddRange(ordered);
         }
-        _uploadedHistoryParts.AddRange(loaded.UploadedTextParts);
     }
 
     /// <summary>
     /// [AI Context] The history that opens every user turn, in the same order for the part requests and all
-    /// warm-up handshakes so their prefixes agree: the uploaded history files (with their notice), then, if
-    /// LoadHistoryIntoSystemInstruction is false, the inlined history.
+    /// warm-up handshakes so their prefixes agree: the uploaded history batch (`.md` links interleaved with
+    /// their images, after its notice), then, if LoadHistoryIntoSystemInstruction is false, the inlined history.
     /// [Human] Die History am Anfang jedes User-Turns (Request und Warm-ups gleich).
     /// </summary>
     private List<Part> HistoryUserTurnParts() {
         var parts = new List<Part>();
-        if (_uploadedHistoryParts.Count > 0) {
+        bool hasUserTurnHistory = _uploadedHistoryParts.Count > 0 || (!_config.LoadHistoryIntoSystemInstruction && _historyParts.Count > 0);
+        if (hasUserTurnHistory) {
             parts.Add(new Part { Text = SystemInstructionTextBuilder.UploadedHistoryNotice });
             parts.AddRange(_uploadedHistoryParts);
-        }
-        if (!_config.LoadHistoryIntoSystemInstruction) {
-            parts.AddRange(_historyParts);
+            if (!_config.LoadHistoryIntoSystemInstruction) {
+                parts.AddRange(_historyParts);
+            }
         }
         return parts;
     }
@@ -437,7 +440,8 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
     /// <summary>
     /// [AI Context] The system instruction's parts: its text, then the history when it is loaded into
     /// the system instruction. A backend whose system instruction takes text only (Vertex) keeps the
-    /// history's files out; they reach the model through its explicit context cache instead.
+    /// history's files (and their &lt;image&gt;/&lt;file&gt; wrappers) out; they reach the model through its
+    /// explicit context cache instead.
     /// [Human] Die Teile der System Instruction; bei Vertex ohne History-Dateien.
     /// </summary>
     public static List<Part> BuildSystemInstructionParts(string systemInstructionText, IReadOnlyList<Part> historyParts, bool loadHistoryIntoSystemInstruction, bool acceptsFiles) {
@@ -446,7 +450,7 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
         if (loadHistoryIntoSystemInstruction && historyParts.Count > 0) {
             sysParts.AddRange(acceptsFiles
                 ? historyParts
-                : historyParts.Where(p => p.FileData == null && p.InlineData == null && !string.IsNullOrEmpty(p.Text)));
+                : SystemInstructionTextBuilder.PartitionForTextOnlySystemInstruction(historyParts).TextOnlySystemParts);
         }
         return sysParts;
     }
@@ -556,7 +560,7 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
         Ui.Step($"[Gemini Consumer] Starte API-Extraktion für {Path.GetFileName(file)}");
 
         // Handle Audio File Generation
-        var (refinementClient, refinementConfig) = PrepareRefinementConfig();
+        var (refinementClient, refinementConfig) = PrepareRefinementConfig(partsWithTimes.Count);
         var state = new VideoProcessingState(ComputeBaseName(file), new AudioTrackExtractor(file, fileSpecificOutputFolder)) {
             RefinementClient = refinementClient,
             RefinementConfig = refinementConfig
@@ -588,14 +592,14 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
     /// step 1 for single-part videos or applying extraction model parameters) never mutate the loaded configuration.
     /// [Human] Löst den Client für das Refinement auf und übernimmt bei Bedarf die gewählten Modell-Parameter auf einer Kopie der Konfiguration.
     /// </summary>
-    private (Client? Client, LatexRefinementSessionConfig? Config) PrepareRefinementConfig() {
+    private (Client? Client, LatexRefinementSessionConfig? Config) PrepareRefinementConfig(int totalParts) {
         if (!_config.GoIntoLatexRefinement) return (null, null);
 
         var copy = _latexRefinementConfig.Clone();
         bool useVertex = _backend.RefinementUsesVertex;
         copy.UseVertex = useVertex;
-        if (!_config.NumberOfParts.IsAuto && (int)_config.NumberOfParts <= 1 && copy.Step1MergeAndTimestamp != null) {
-            Ui.Info($"NumberOfParts = {_config.NumberOfParts} (<= 1). Deaktiviere Schritt 1 (Merger) für die LatexRefinementSession.", "AutoExtraction");
+        if (totalParts <= 1 && copy.Step1MergeAndTimestamp != null) {
+            Ui.Info($"Einteilige Transkription ({totalParts} Teil). Deaktiviere Schritt 1 (Merger) für die LatexRefinementSession.", "AutoExtraction");
             copy.Step1MergeAndTimestamp.Enabled = false;
         }
         if (_config.UseChosenModelForRestOfPipeline) {
@@ -646,6 +650,7 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
         public readonly System.Text.StringBuilder FullOutputTextOffsetted = new(); // Stores text with timestamps adjusted by partStartTimeSeconds
         public TokenUsage FileTotalTokens;
         public readonly List<string> PartSummaries = []; // one line per part, for the combined header
+        public string? SinglePartOutputFile;
         public bool FileProcessingSuccess = true;
         public bool AnyPartSentToApi; // false while every part so far came from disk (resume)
         public Task<SegmentUpload>? PendingVideoUploadTask;
@@ -662,27 +667,38 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
     /// [Human] Extrahiert LaTeX Teil für Teil für ein Video.
     /// </summary>
     private async Task TranscribeSegmentsAsync(VideoProcessingState state, string file, string fileSpecificOutputFolder, IReadOnlyList<VideoSegment> partsWithTimes, double fullOriginalVideoDuration) {
-        for (int i = 0; i < partsWithTimes.Count; i++) {
+        int totalParts = partsWithTimes.Count;
+        bool isSinglePart = totalParts <= 1;
+
+        for (int i = 0; i < totalParts; i++) {
             string safePartPath = partsWithTimes[i].FilePath;
             double partStartTimeSeconds = partsWithTimes[i].StartTimeSeconds;
-            string targetPartPath = Path.Combine(fileSpecificOutputFolder, $"{state.BaseName}-part{i + 1}.tex");
+            string partStem = PartReuse.PartStem(state.BaseName, i + 1, totalParts);
+            string targetPartPath = Path.Combine(fileSpecificOutputFolder, $"{partStem}.tex");
 
-            Ui.Step($"Verarbeite Teil {i + 1}/{partsWithTimes.Count}: {Path.GetFileName(safePartPath)}");
-            string? reusablePartPath = PartReuse.FindReusablePart(fileSpecificOutputFolder, state.BaseName, i + 1, ResumeWindow);
+            Ui.Step(isSinglePart
+                ? $"Verarbeite Einzelteil-Upload: {Path.GetFileName(safePartPath)}"
+                : $"Verarbeite Teil {i + 1}/{totalParts}: {Path.GetFileName(safePartPath)}");
+            string? reusablePartPath = PartReuse.FindReusablePart(fileSpecificOutputFolder, state.BaseName, i + 1, ResumeWindow, totalParts);
             if (reusablePartPath != null) {
                 Ui.Info($"Vorhandene LaTeX-Datei gefunden: {Path.GetFileName(reusablePartPath)}. Überspringe API-Extraktion für diesen Teil.", "Resume");
                 string existingTex = await System.IO.File.ReadAllTextAsync(reusablePartPath);
                 state.GeneratedTexFiles.Add(reusablePartPath);
 
-                // The part keeps the header it was written with - its own model, date and tokens - so
-                // a reused part is described as what it is, not as part of this run.
-                var (cachedHeader, cachedBody) = TexDocumentWriter.SplitHeaderLayers(existingTex);
-                string cachedSummary = TexDocumentWriter.SummarizePartHeader(cachedHeader);
-                state.PartSummaries.Add(cachedSummary.Length > 0 ? $"{cachedSummary} | aus Cache" : "aus Cache");
-                string cachedSeparator = TexDocumentWriter.BuildPartSeparator(i + 1, cachedHeader, fromCache: true);
-                state.FullOutputTextRaw.Append(cachedSeparator).Append(cachedBody); // For raw output
-                if (_config.GenerateOffsetFiles) {
-                    state.FullOutputTextOffsetted.Append(cachedSeparator).Append(LatexTimestampAdjuster.AdjustTimestamps(cachedBody, partStartTimeSeconds)); // For offsetted output
+                if (isSinglePart) {
+                    state.SinglePartOutputFile = reusablePartPath;
+                }
+                else {
+                    // The part keeps the header it was written with - its own model, date and tokens - so
+                    // a reused part is described as what it is, not as part of this run.
+                    var (cachedHeader, cachedBody) = TexDocumentWriter.SplitHeaderLayers(existingTex);
+                    string cachedSummary = TexDocumentWriter.SummarizePartHeader(cachedHeader);
+                    state.PartSummaries.Add(cachedSummary.Length > 0 ? $"{cachedSummary} | aus Cache" : "aus Cache");
+                    string cachedSeparator = TexDocumentWriter.BuildPartSeparator(i + 1, cachedHeader, fromCache: true);
+                    state.FullOutputTextRaw.Append(cachedSeparator).Append(cachedBody); // For raw output
+                    if (_config.GenerateOffsetFiles) {
+                        state.FullOutputTextOffsetted.Append(cachedSeparator).Append(LatexTimestampAdjuster.AdjustTimestamps(cachedBody, partStartTimeSeconds)); // For offsetted output
+                    }
                 }
                 state.AudioTrackExtractor.EnsureStarted(_config.GenerateAudioFile);
                 continue;
@@ -739,7 +755,7 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
                 if (i + 1 < partsWithTimes.Count) {
                     // The same rule the next iteration applies, so a part that will be reused is not
                     // uploaded and a stale one that will be transcribed again is.
-                    if (PartReuse.FindReusablePart(fileSpecificOutputFolder, state.BaseName, i + 2, ResumeWindow) == null) {
+                    if (PartReuse.FindReusablePart(fileSpecificOutputFolder, state.BaseName, i + 2, ResumeWindow, totalParts) == null) {
                         Ui.Info($"Starte parallelen Video-Upload für nächsten Teil ({i + 2}/{partsWithTimes.Count}) im Hintergrund...", "Pre-Upload");
                         state.PendingVideoUploadTask = UploadSegmentAndBuildPromptAsync(partsWithTimes[i + 1].FilePath, i + 2, partsWithTimes.Count, file, fullOriginalVideoDuration);
                     }
@@ -771,7 +787,7 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
             }
             state.AnyPartSentToApi = true;
 
-            segmentTranscript = await TranscribeSegmentToLatexAsync(safePartPath, i + 1, file, parsedPrompt, attachmentParts, state.GeneratedTexFiles, targetPartPath);
+            segmentTranscript = await TranscribeSegmentToLatexAsync(safePartPath, i + 1, file, parsedPrompt, attachmentParts, state.GeneratedTexFiles, targetPartPath, totalParts);
             InteractiveDelay.LastGenerationCompletionTimeUtc = DateTime.UtcNow;
 
             state.FileTotalTokens += segmentTranscript.Usage;
@@ -779,36 +795,52 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
             if (!string.IsNullOrWhiteSpace(segmentTranscript.LatexBody)) {
                 string cleanTex = LatexResponseCleaner.CleanLatexResponse(segmentTranscript.LatexBody);
 
-                // One header per part, written into the part file and repeated under the part's
-                // separator in the combined document, so each part's settings travel with its text.
-                string partHeader = TexDocumentWriter.BuildPartHeader(
-                    partNumber: i + 1,
-                    totalParts: partsWithTimes.Count,
-                    sourcePartFileName: Path.GetFileName(safePartPath),
-                    partStartTimeSeconds: partStartTimeSeconds,
-                    usage: segmentTranscript.Usage,
-                    model: _config.CurrentModel,
-                    generation: _config.Generation,
-                    thoughtsFileName: Path.GetFileName(segmentTranscript.ThoughtsFile));
-                state.PartSummaries.Add(TexDocumentWriter.SummarizePartHeader(partHeader));
-
-                string partSeparator = TexDocumentWriter.BuildPartSeparator(i + 1, partHeader, fromCache: false);
-                state.FullOutputTextRaw.Append(partSeparator).Append(cleanTex);
-                if (_config.GenerateOffsetFiles) {
-                    state.FullOutputTextOffsetted.Append(partSeparator).Append(LatexTimestampAdjuster.AdjustTimestamps(cleanTex, partStartTimeSeconds));
+                if (isSinglePart) {
+                    string uniqueTargetPartPath = ExtractionHelpers.ResolveNonClashingTexPath(targetPartPath);
+                    string singlePartHeader = TexDocumentWriter.BuildSinglePartHeader(
+                        outputFileName: Path.GetFileName(uniqueTargetPartPath),
+                        sourceSegmentFileName: Path.GetFileName(safePartPath),
+                        originalVideoFileName: Path.GetFileName(file),
+                        usage: segmentTranscript.Usage,
+                        model: _config.CurrentModel,
+                        generation: _config.Generation,
+                        thoughtsFileName: Path.GetFileName(segmentTranscript.ThoughtsFile));
+                    await System.IO.File.WriteAllTextAsync(uniqueTargetPartPath, singlePartHeader + "\n" + cleanTex);
+                    state.SinglePartOutputFile = uniqueTargetPartPath;
+                    state.GeneratedTexFiles.Add(uniqueTargetPartPath);
                 }
+                else {
+                    // One header per part, written into the part file and repeated under the part's
+                    // separator in the combined document, so each part's settings travel with its text.
+                    string partHeader = TexDocumentWriter.BuildPartHeader(
+                        partNumber: i + 1,
+                        totalParts: partsWithTimes.Count,
+                        sourcePartFileName: Path.GetFileName(safePartPath),
+                        partStartTimeSeconds: partStartTimeSeconds,
+                        usage: segmentTranscript.Usage,
+                        model: _config.CurrentModel,
+                        generation: _config.Generation,
+                        thoughtsFileName: Path.GetFileName(segmentTranscript.ThoughtsFile));
+                    state.PartSummaries.Add(TexDocumentWriter.SummarizePartHeader(partHeader));
 
-                string uniqueTargetPartPath = ExtractionHelpers.ResolveNonClashingTexPath(targetPartPath);
-                await System.IO.File.WriteAllTextAsync(uniqueTargetPartPath, partHeader + "\n" + cleanTex);
+                    string partSeparator = TexDocumentWriter.BuildPartSeparator(i + 1, partHeader, fromCache: false);
+                    state.FullOutputTextRaw.Append(partSeparator).Append(cleanTex);
+                    if (_config.GenerateOffsetFiles) {
+                        state.FullOutputTextOffsetted.Append(partSeparator).Append(LatexTimestampAdjuster.AdjustTimestamps(cleanTex, partStartTimeSeconds));
+                    }
 
-                if (_config.GenerateOffsetFiles) {
-                    string offsettedPartContent = LatexTimestampAdjuster.AdjustTimestamps(cleanTex, partStartTimeSeconds);
-                    string targetPartPathOffset = Path.Combine(fileSpecificOutputFolder, $"{state.BaseName}-part{i + 1}-offset.tex");
-                    string uniqueTargetPartPathOffset = ExtractionHelpers.ResolveNonClashingTexPath(targetPartPathOffset);
-                    await System.IO.File.WriteAllTextAsync(uniqueTargetPartPathOffset, partHeader + "\n" + offsettedPartContent);
-                    Ui.Success($"Offset-korrigierter Teil gespeichert unter: {Path.GetFileName(uniqueTargetPartPathOffset)}");
+                    string uniqueTargetPartPath = ExtractionHelpers.ResolveNonClashingTexPath(targetPartPath);
+                    await System.IO.File.WriteAllTextAsync(uniqueTargetPartPath, partHeader + "\n" + cleanTex);
+
+                    if (_config.GenerateOffsetFiles) {
+                        string offsettedPartContent = LatexTimestampAdjuster.AdjustTimestamps(cleanTex, partStartTimeSeconds);
+                        string targetPartPathOffset = Path.Combine(fileSpecificOutputFolder, $"{state.BaseName}-part{i + 1}-offset.tex");
+                        string uniqueTargetPartPathOffset = ExtractionHelpers.ResolveNonClashingTexPath(targetPartPathOffset);
+                        await System.IO.File.WriteAllTextAsync(uniqueTargetPartPathOffset, partHeader + "\n" + offsettedPartContent);
+                        Ui.Success($"Offset-korrigierter Teil gespeichert unter: {Path.GetFileName(uniqueTargetPartPathOffset)}");
+                    }
+                    state.GeneratedTexFiles.Add(uniqueTargetPartPath);
                 }
-                state.GeneratedTexFiles.Add(uniqueTargetPartPath);
             }
             else {
                 Ui.Error($"Die Verarbeitung von Teil {i + 1} für '{Path.GetFileName(file)}' ist fehlgeschlagen. Breche die Verarbeitung für diese Datei ab.");
@@ -841,29 +873,37 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
     /// <returns>The refinement's result: false if one of its steps failed. true when it succeeded or
     /// was not meant to run (GoIntoLatexRefinement off).</returns>
     private async Task<bool> FinalizeVideoOutputAsync(VideoProcessingState state, string file, string fileSpecificOutputFolder, int totalParts) {
-        string targetFilePath = Path.Combine(fileSpecificOutputFolder, $"{state.BaseName}-all.tex");
-        string targetFilePathOffset = Path.Combine(fileSpecificOutputFolder, $"{state.BaseName}-all-offset.tex");
+        string refinementTargetFile;
+        bool singlePass = totalParts <= 1 && state.SinglePartOutputFile != null;
+        if (singlePass) {
+            refinementTargetFile = state.SinglePartOutputFile!;
+            Ui.Success($"Fertig mit {Path.GetFileName(file)}. Das komplette Einzelteil-Dokument liegt hier: {refinementTargetFile}", "AutoExtraction");
+        }
+        else {
+            string targetFilePath = Path.Combine(fileSpecificOutputFolder, $"{state.BaseName}-all.tex");
+            string targetFilePathOffset = Path.Combine(fileSpecificOutputFolder, $"{state.BaseName}-all-offset.tex");
 
-        string Header(string outputPath) => TexDocumentWriter.BuildCombinedHeader(
-            outputFileName: Path.GetFileName(outputPath),
-            sourceFileName: Path.GetFileName(file),
-            totalParts: totalParts,
-            runUsage: state.FileTotalTokens,
-            model: _config.CurrentModel,
-            generation: _config.Generation,
-            partSummaries: state.PartSummaries);
+            string Header(string outputPath) => TexDocumentWriter.BuildCombinedHeader(
+                outputFileName: Path.GetFileName(outputPath),
+                sourceFileName: Path.GetFileName(file),
+                totalParts: totalParts,
+                runUsage: state.FileTotalTokens,
+                model: _config.CurrentModel,
+                generation: _config.Generation,
+                partSummaries: state.PartSummaries);
 
-        string uniqueTargetFilePath = ExtractionHelpers.ResolveNonClashingTexPath(targetFilePath);
-        await System.IO.File.WriteAllTextAsync(uniqueTargetFilePath, Header(uniqueTargetFilePath) + state.FullOutputTextRaw.ToString());
-        Ui.Success($"Fertig mit {Path.GetFileName(file)}. Das komplette Dokument liegt hier: {uniqueTargetFilePath}", "AutoExtraction");
+            string uniqueTargetFilePath = ExtractionHelpers.ResolveNonClashingTexPath(targetFilePath);
+            await System.IO.File.WriteAllTextAsync(uniqueTargetFilePath, Header(uniqueTargetFilePath) + state.FullOutputTextRaw.ToString());
+            Ui.Success($"Fertig mit {Path.GetFileName(file)}. Das komplette Dokument liegt hier: {uniqueTargetFilePath}", "AutoExtraction");
 
-        string refinementTargetFile = uniqueTargetFilePath;
+            refinementTargetFile = uniqueTargetFilePath;
 
-        if (_config.GenerateOffsetFiles) {
-            string uniqueTargetFilePathOffset = ExtractionHelpers.ResolveNonClashingTexPath(targetFilePathOffset);
-            await System.IO.File.WriteAllTextAsync(uniqueTargetFilePathOffset, Header(uniqueTargetFilePathOffset) + state.FullOutputTextOffsetted.ToString());
-            Ui.Success($"Fertig mit {Path.GetFileName(file)}. Das offset-korrigierte Dokument liegt hier: {uniqueTargetFilePathOffset}", "AutoExtraction");
-            refinementTargetFile = uniqueTargetFilePathOffset;
+            if (_config.GenerateOffsetFiles) {
+                string uniqueTargetFilePathOffset = ExtractionHelpers.ResolveNonClashingTexPath(targetFilePathOffset);
+                await System.IO.File.WriteAllTextAsync(uniqueTargetFilePathOffset, Header(uniqueTargetFilePathOffset) + state.FullOutputTextOffsetted.ToString());
+                Ui.Success($"Fertig mit {Path.GetFileName(file)}. Das offset-korrigierte Dokument liegt hier: {uniqueTargetFilePathOffset}", "AutoExtraction");
+                refinementTargetFile = uniqueTargetFilePathOffset;
+            }
         }
 
         if (state.AudioTrackExtractor.PendingTask != null) {
@@ -879,7 +919,9 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
 
         string audioFilePath = FindAudioFile(fileSpecificOutputFolder, file);
 
-        Ui.Step($"Starte automatischen Refinement-Prozess für die {(_config.GenerateOffsetFiles ? "offset-korrigierte " : "")}Datei...");
+        Ui.Step(singlePass
+            ? "Starte automatischen Refinement-Prozess (ohne Merge-Schritt)..."
+            : $"Starte automatischen Refinement-Prozess für die {(_config.GenerateOffsetFiles ? "offset-korrigierte " : "")}Datei...");
         var refinementSession = new LatexRefinementSession(
             state.RefinementClient ?? _client,
             RefinementOptions.ForFile(state.RefinementConfig ?? _latexRefinementConfig, refinementTargetFile, _config, audioFilePath, preUploadedAudioParts));
@@ -900,10 +942,9 @@ public partial class AutoExtractionSession(IExtractionBackend backend, IAutoExtr
     public async Task<bool> RefineYouTubeOutputAsync(string combinedTexPath, int totalParts) {
         if (!_config.GoIntoLatexRefinement) return true;
 
-        var (refinementClient, refinementConfig) = PrepareRefinementConfig();
-        var targetConfig = refinementConfig ?? _latexRefinementConfig;
+        var (refinementClient, refinementConfig) = PrepareRefinementConfig(totalParts);
+        var targetConfig = refinementConfig ?? _latexRefinementConfig.Clone();
         if (totalParts <= 1 && targetConfig.Step1MergeAndTimestamp != null) {
-            Ui.Info($"YouTube-Video hat {totalParts} Teil (<= 1). Überspringe Schritt 1 (Merge) und führe Speech Refinement + Last Refinement aus.", "YouTube Mode");
             targetConfig.Step1MergeAndTimestamp.Enabled = false;
         }
 

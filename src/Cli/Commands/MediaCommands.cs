@@ -37,7 +37,7 @@ public static class MediaCommands {
     }
 
     private static Command BuildProbe() {
-        var command = new Command("probe", "Report a video's duration, size and parsed lecture date.") { Input, ExtractionOptions.Parts, ExtractionOptions.Overlap };
+        var command = new Command("probe", "Report a video's duration, size and parsed lecture date.") { Input, ExtractionOptions.Parts, ExtractionOptions.Overlap, ExtractionOptions.Model };
 
         command.SetAction(async (parseResult, _) => {
             var context = CliOptions.ReadContext(parseResult);
@@ -54,7 +54,7 @@ public static class MediaCommands {
             var lecture = VideoDateParser.Parse(input);
             var info = new FileInfo(input);
 
-            int resolvedParts = config.NumberOfParts.Resolve(duration);
+            int resolvedParts = config.NumberOfParts.Resolve(duration, config.CurrentModel);
 
             // The same geometry the splitter uses, so a caller can see the segment count and the
             // request count that follows from it before committing to a run.
@@ -98,7 +98,7 @@ public static class MediaCommands {
     private static Command BuildSegment() {
         var command = new Command("segment", "Compress and slice a video into overlapping segments.") {
             Input, ExtractionOptions.Out, ExtractionOptions.Parts,
-            ExtractionOptions.Overlap, ExtractionOptions.Speed, ExtractionOptions.Preset
+            ExtractionOptions.Overlap, ExtractionOptions.Speed, ExtractionOptions.Preset, ExtractionOptions.Model
         };
 
         command.SetAction(async (parseResult, _) => {
@@ -115,7 +115,7 @@ public static class MediaCommands {
 
             if (context.DryRun) {
                 double duration = await FfmpegToolkit.GetVideoDurationAsync(input);
-                int parts = config.NumberOfParts.Resolve(duration);
+                int parts = config.NumberOfParts.Resolve(duration, config.CurrentModel);
                 CliOutput.Payload(context, new {
                     file = Path.GetFullPath(input),
                     targetFolder = config.TargetFolder,

@@ -58,6 +58,14 @@ public static class ExtractionOptions {
         Description = "Thinking level for reasoning models (e.g. MINIMAL, LOW, MEDIUM, HIGH, XHIGH)."
     };
 
+    public static readonly Option<int?> HighDemandDelay = new("--high-demand-delay") {
+        Description = "Seconds to wait before retrying after a high-demand (503) response."
+    };
+
+    public static readonly Option<int?> MaxRetries = new("--max-retries") {
+        Description = "Maximum consecutive failed API attempts before giving up."
+    };
+
     /// <summary>
     /// Applies whichever overrides were supplied. Config writeback is off by default in CLI mode,
     /// so these change the in-memory config for this run only unless --save-config was passed.
@@ -114,6 +122,14 @@ public static class ExtractionOptions {
 
         if (parseResult.GetValue(ThinkingLevel) is string thinkingLevel && !string.IsNullOrWhiteSpace(thinkingLevel)) {
             config.ThinkingLevel = thinkingLevel.Trim().ToUpperInvariant();
+        }
+
+        if (parseResult.GetValue(HighDemandDelay) is int highDemandDelay && highDemandDelay > 0) {
+            config.HighDemandDelaySeconds = highDemandDelay;
+        }
+
+        if (parseResult.GetValue(MaxRetries) is int maxRetries && maxRetries > 0) {
+            config.MaxApiRetries = maxRetries;
         }
 
         ThoughtOptions.Apply(config, parseResult);

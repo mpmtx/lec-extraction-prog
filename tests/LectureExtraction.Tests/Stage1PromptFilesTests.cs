@@ -57,4 +57,20 @@ public class Stage1PromptFilesTests {
         var unlisted = Stage1PromptFiles.FindUnlistedFiles();
         Assert.True(unlisted.Count == 0, "In the prompt folders but not listed: " + string.Join(", ", unlisted));
     }
+
+    [Fact]
+    public void Each_history_folder_places_markdown_before_its_images() {
+        foreach (var group in Stage1PromptFiles.HistoryFiles.GroupBy(p => Path.GetDirectoryName(p.Replace('/', Path.DirectorySeparatorChar)) ?? "")) {
+            bool seenImage = false;
+            foreach (string file in group) {
+                bool isMd = file.EndsWith(".md", StringComparison.OrdinalIgnoreCase);
+                if (isMd) {
+                    Assert.False(seenImage, $"Markdown listed after image in {group.Key}: {file}");
+                }
+                else {
+                    seenImage = true;
+                }
+            }
+        }
+    }
 }
