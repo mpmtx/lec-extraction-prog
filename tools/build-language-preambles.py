@@ -10,8 +10,14 @@ answer with its own icon. A book's own `\\setSpeaker{...}` (its lecturer) is dro
 either book preamble changes:
 
     py tools/build-language-preambles.py
+
+The Algebra book's main file was renamed from algebra-1.tex to algebra-1-transcription.tex on
+2026-11-24. Since 2026-11-27 that book's running header is meant for the book only ("W11 | Tue,
+24.11.2026 | Title" on one line, \\footnotesize); a rerun copies it into pdf-preamble-en.tex, so ask
+the maintainer before regenerating.
 """
 import os
+import re
 import sys
 
 BS = chr(92)
@@ -21,7 +27,7 @@ LATEX = r"C:\Users\miche\latex"
 SOURCES = {
     "de": (os.path.join(LATEX, "grundstrukturen-ai-transcription-spring-2025", "grundstrukturen.tex"),
            "Beobachtung", "Beobachtungen", "Bemerkung"),
-    "en": (os.path.join(LATEX, "algebra-1-ai-transcription-fall-2026", "algebra-1.tex"),
+    "en": (os.path.join(LATEX, "algebra-1-ai-transcription-fall-2026", "algebra-1-transcription.tex"),
            "Observation", "Observations", "Remark"),
 }
 
@@ -72,9 +78,12 @@ def insert_before(lines, anchor, new_lines):
 
 def build(lang, source, obs, obs_plural, remark):
     text = open(source, encoding="utf-8").read().replace("\r\n", "\n")
-    cut = text.find(BS + "begin{document}")
-    if cut < 0:
+    # the first \begin{document} at the start of a line: since the vertical-rhythm rollout
+    # (2026-11-2x) both book preambles mention \begin{document} in a comment further up
+    m = re.search(r"(?m)^" + re.escape(BS + "begin{document}"), text)
+    if not m:
         sys.exit(f"no \\begin{{document}} in {source}")
+    cut = m.start()
     lines = text[:cut].rstrip("\n").split("\n")
     # a book may set its lecturer once in the preamble; the pipeline's lectures have other speakers,
     # so drop that call together with the comment lines right above it
