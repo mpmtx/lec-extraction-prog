@@ -65,6 +65,24 @@
 \usepackage{array}
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}} % ragged-right paragraph column for tables that would run into the margin
 \usepackage{listings} % code listings (lstlisting)
+
+% Code listings (lstlisting, \lstinline): typewriter font in natural spacing (the default sets
+% code in the text font with letter-spaced columns) and lines broken at the margin. Under
+% pdfLaTeX listings reads UTF-8 byte by byte and stops at the first letter beyond ASCII
+% ("Invalid UTF-8 byte"), so literate gives each one it may meet its LaTeX form; a character
+% not listed here still stops the build.
+\lstset{
+  basicstyle=\ttfamily\small,
+  columns=fullflexible,
+  keepspaces=true,
+  breaklines=true,
+  showstringspaces=false,
+  literate={ä}{{\"a}}1 {ö}{{\"o}}1 {ü}{{\"u}}1 {Ä}{{\"A}}1 {Ö}{{\"O}}1 {Ü}{{\"U}}1 {ß}{{\ss}}1
+           {é}{{\'e}}1 {è}{{\`e}}1 {à}{{\`a}}1 {ç}{{\c{c}}}1
+           {→}{{$\to$}}1 {←}{{$\leftarrow$}}1 {≤}{{$\le$}}1 {≥}{{$\ge$}}1 {≠}{{$\ne$}}1
+           {⊕}{{$\oplus$}}1 {·}{{$\cdot$}}1
+}
+
 \usepackage{capt-of}  % \captionof for figures outside floats
 \usepackage{fontawesome5}
 \usepackage[dvipsnames, x11names]{xcolor}
@@ -363,6 +381,13 @@ pdfauthor={Prof. Rahul Pandharipande}
 
 % Inline-Mathe "Atemluft" 
 \setlength{\mathsurround}{1pt}
+
+% No \mathsurround inside TikZ: with it, tikz-cd draws its arrows shifted to the right of their
+% nodes, through the label of the target (seen 2026-11-27 in a pipeline PDF), and every math
+% label in a figure is 1pt wider on each side than its inner sep says. tikzcd needs its own
+% line: it starts its picture without \begin{tikzpicture}.
+\AtBeginEnvironment{tikzpicture}{\setlength{\mathsurround}{0pt}}
+\AtBeginEnvironment{tikzcd}{\setlength{\mathsurround}{0pt}}
 
 % Matrix- und Tabellen-Zeilen 
 \renewcommand{\arraystretch}{1.15}
